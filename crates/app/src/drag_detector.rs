@@ -1,7 +1,7 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::Duration;
-use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, Position};
+use tauri::{AppHandle, Emitter, Manager, PhysicalPosition};
 use tracing::info;
 
 #[cfg(target_os = "windows")]
@@ -11,9 +11,7 @@ use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
     GetAsyncKeyState, VK_ESCAPE, VK_LBUTTON, VK_SHIFT,
 };
 #[cfg(target_os = "windows")]
-use windows_sys::Win32::UI::WindowsAndMessaging::{
-    GetCursorPos, SetWindowPos, HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOSIZE, SWP_SHOWWINDOW,
-};
+use windows_sys::Win32::UI::WindowsAndMessaging::GetCursorPos;
 
 /// Global flag indicating whether a conversion is currently running,
 /// so the background watcher doesn't hide the window while converting.
@@ -51,12 +49,13 @@ pub fn start_drag_detector(app: AppHandle) {
                 if esc_pressed {
                     if state != DragState::Idle {
                         state = DragState::Idle;
-                        let _ = app.emit("drag_cancelled", ());
-                        if !get_is_converting() {
-                            if let Some(win) = app.get_webview_window("main") {
-                                let _ = win.set_ignore_cursor_events(true);
-                                let _ = win.hide();
-                            }
+                        let ui_app = app.clone();
+                        if let Err(error) = app.run_on_main_thread(move || {
+                            let _ = ui_app.emit("drag_cancelled", ());
+                            // The frontend completes its exit animation before
+                            // asking Rust to hide the native surface.
+                        }) {
+                            tracing::warn!(%error, "Could not schedule wheel cancellation");
                         }
                     }
                     continue;
@@ -126,31 +125,28 @@ pub fn start_drag_detector(app: AppHandle) {
                                         }
                                     }
 
-                                    // Position window
-                                    let _ = win.set_position(Position::Physical(PhysicalPosition::new(target_x, target_y)));
-                                    // Remove passthrough so WebView2 drop target receives OLE events
-                                    let _ = win.set_ignore_cursor_events(false);
-
-                                    // Show window without stealing keyboard focus (SW_SHOWNOACTIVATE)
-                                    if let Ok(hwnd) = win.hwnd() {
-                                        unsafe {
-                                            SetWindowPos(
-                                                hwnd.0 as _,
-                                                HWND_TOPMOST,
-                                                target_x,
-                                                target_y,
-                                                0,
-                                                0,
-                                                SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW,
-                                            );
+                                    // Keep native style/visibility changes on the window's
+                                    // UI thread, before notifying the frontend of the drag.
+                                    let ui_window = win.clone();
+                                    let ui_app = app.clone();
+                                    if let Err(error) = win.run_on_main_thread(move || {
+                                        match crate::wheel_window::show(
+                                            &ui_window,
+                                            Some(PhysicalPosition::new(target_x, target_y)),
+                                            false,
+                                        ) {
+                                            Ok(()) => {
+                                                let _ = ui_app.emit("shift_drag_start", ());
+                                                let _ = ui_app.emit("ctrl_drag_start", ());
+                                            }
+                                            Err(error) => {
+                                                tracing::warn!(%error, "Could not show drag wheel");
+                                            }
                                         }
-                                    } else {
-                                        let _ = win.show();
+                                    }) {
+                                        tracing::warn!(%error, "Could not schedule drag wheel");
                                     }
                                 }
-
-                                let _ = app.emit("shift_drag_start", ());
-                                let _ = app.emit("ctrl_drag_start", ());
                             }
                         }
                     }
@@ -160,8 +156,15 @@ pub fn start_drag_detector(app: AppHandle) {
                         if !lbutton_down {
                             state = DragState::Idle;
                             info!("Left mouse button released, ending drag");
-                            let _ = app.emit("shift_drag_end", ());
-                            let _ = app.emit("ctrl_drag_end", ());
+                            // Use the same queue as show/cancel so a quick release
+                            // cannot reach the frontend before the start event.
+                            let ui_app = app.clone();
+                            if let Err(error) = app.run_on_main_thread(move || {
+                                let _ = ui_app.emit("shift_drag_end", ());
+                                let _ = ui_app.emit("ctrl_drag_end", ());
+                            }) {
+                                tracing::warn!(%error, "Could not schedule drag end");
+                            }
                         }
                     }
                 }

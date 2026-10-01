@@ -1,5 +1,6 @@
 pub mod commands;
 pub mod drag_detector;
+mod wheel_window;
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -54,11 +55,8 @@ pub fn run() {
                     match event.id().as_ref() {
                         "toggle" => {
                             if let Some(win) = app.get_webview_window("main") {
-                                if win.is_visible().unwrap_or(false) {
-                                    let _ = win.hide();
-                                } else {
-                                    let _ = win.show();
-                                    let _ = win.set_focus();
+                                if let Err(error) = wheel_window::toggle(&win) {
+                                    tracing::warn!(%error, "Could not toggle wheel from tray menu");
                                 }
                             }
                         }
@@ -77,11 +75,8 @@ pub fn run() {
                     {
                         let app = tray.app_handle();
                         if let Some(win) = app.get_webview_window("main") {
-                            if win.is_visible().unwrap_or(false) {
-                                let _ = win.hide();
-                            } else {
-                                let _ = win.show();
-                                let _ = win.set_focus();
+                            if let Err(error) = wheel_window::toggle(&win) {
+                                tracing::warn!(%error, "Could not toggle wheel from tray icon");
                             }
                         }
                     }
@@ -90,8 +85,7 @@ pub fn run() {
 
             // Main window setup: start hidden and in passthrough mode
             if let Some(window) = app.get_webview_window("main") {
-                let _ = window.hide();
-                let _ = window.set_ignore_cursor_events(true);
+                wheel_window::hide(&window).map_err(std::io::Error::other)?;
 
                 #[cfg(target_os = "macos")]
                 {

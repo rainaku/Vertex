@@ -297,11 +297,13 @@ pub fn reveal_in_explorer(path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn hide_wheel_window(app: AppHandle) -> Result<(), String> {
+pub fn hide_wheel_window(app: AppHandle, generation: u32) -> Result<(), String> {
+    if generation != crate::wheel_window::generation() {
+        return Ok(());
+    }
     crate::drag_detector::set_is_converting(false);
     if let Some(win) = app.get_webview_window("main") {
-        let _ = win.set_ignore_cursor_events(true);
-        win.hide().map_err(|e| e.to_string())?;
+        crate::wheel_window::hide(&win)?;
     }
     Ok(())
 }
@@ -314,8 +316,7 @@ pub fn set_converting_state(converting: bool) {
 #[tauri::command]
 pub fn show_wheel_window(app: AppHandle) -> Result<(), String> {
     if let Some(win) = app.get_webview_window("main") {
-        win.show().map_err(|e| e.to_string())?;
-        win.set_focus().map_err(|e| e.to_string())?;
+        crate::wheel_window::show(&win, None, true)?;
     }
     Ok(())
 }
@@ -325,8 +326,7 @@ pub fn show_wheel_window(app: AppHandle) -> Result<(), String> {
 #[tauri::command]
 pub fn set_window_passthrough(app: AppHandle, passthrough: bool) -> Result<(), String> {
     if let Some(win) = app.get_webview_window("main") {
-        win.set_ignore_cursor_events(passthrough)
-            .map_err(|e| e.to_string())?;
+        crate::wheel_window::set_passthrough(&win, passthrough)?;
     }
     Ok(())
 }

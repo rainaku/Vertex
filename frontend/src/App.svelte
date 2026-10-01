@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount, onDestroy, tick } from 'svelte';
   import RadialWheel from './lib/RadialWheel.svelte';
   import {
     detectFile,
@@ -30,6 +30,11 @@
 
   // Whether wheel is currently visible
   let wheelVisible: boolean = false;
+  let wheelClosing = false;
+  let wheelElement: HTMLDivElement;
+  let visibilityRevision = 0;
+  let nativeGeneration = 0;
+  let cancelCloseWait: (() => void) | null = null;
 
   // Whether a file is being dragged over our window
   let isDragging: boolean = false;
@@ -51,6 +56,8 @@
   let unlistenDragStart: (() => void) | null = null;
   let unlistenDragEnd: (() => void) | null = null;
   let unlistenDragCancel: (() => void) | null = null;
+  let unlistenWheelShown: (() => void) | null = null;
+  let unlistenCloseRequested: (() => void) | null = null;
 
   // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -101,19 +108,54 @@
   // ─── Wheel visibility ────────────────────────────────────────────────────────
 
   async function showWheel() {
+    cancelClose();
     if (wheelVisible) return;
     wheelVisible = true;
     // Disable passthrough so user can interact with the wheel
     await setWindowPassthrough(false);
   }
 
+  function cancelClose() {
+    visibilityRevision++;
+    cancelCloseWait?.();
+    cancelCloseWait = null;
+    wheelClosing = false;
+  }
+
   async function hideWheel() {
+    if (wheelClosing) return;
+    const revision = ++visibilityRevision;
+    const generation = nativeGeneration;
+    wheelClosing = true;
     wheelVisible = false;
     activeIndex = -1;
     isDragging = false;
-    // Re-enable passthrough and hide window
-    await setWindowPassthrough(true);
-    await hideWheelWindow();
+    clearDragDwell();
+    // Let Svelte apply the closing styles before collecting their transitions.
+    await tick();
+    if (revision !== visibilityRevision) return;
+    const transitions = wheelElement?.getAnimations() ?? [];
+    await new Promise<void>((resolve) => {
+      // Also finish if a hidden/throttled webview never delivers completion.
+      const timeout = window.setTimeout(finish, 300);
+      function finish() {
+        window.clearTimeout(timeout);
+        resolve();
+      }
+      cancelCloseWait = finish;
+      Promise.allSettled(transitions.map((animation) => animation.finished)).then(finish);
+    });
+    if (revision !== visibilityRevision) return;
+    cancelCloseWait = null;
+    try {
+      // Keep the native surface alive for the entire CSS exit, then hide it.
+      // Rust rejects this close if another drag has already reopened the window.
+      await hideWheelWindow(generation);
+    } catch (error) {
+      console.warn('Failed to hide wheel window:', error);
+    } finally {
+      if (revision === visibilityRevision) wheelClosing = false;
+    }
   }
 
   // ─── File handling ───────────────────────────────────────────────────────────
@@ -158,6 +200,7 @@
     activeIndex = index;
     status = 'converting';
     progress = 0.05;
+    await showWheel();
     await setConvertingState(true);
 
     const jobId = `job_${Date.now()}`;
@@ -225,6 +268,15 @@
         const { listen } = await import('@tauri-apps/api/event');
         const webview = getCurrentWebview();
 
+        unlistenWheelShown = await listen<{ generation: number; focus: boolean }>('wheel_shown', (event) => {
+          nativeGeneration = event.payload.generation;
+          cancelClose();
+          if (event.payload.focus) void showWheel();
+        });
+        unlistenCloseRequested = await listen('wheel_close_requested', () => {
+          void hideWheel();
+        });
+
         // 1. Listen for global Shift+Drag events from Rust background thread
         unlistenDragStart = await listen('shift_drag_start', () => {
           isDragging = true;
@@ -255,8 +307,10 @@
             const paths = event.payload.paths;
             isDragging = true;
             await handleFileLoaded(paths);
+            if (!isDragging || wheelClosing) return;
             await showWheel();
           } else if (event.payload.type === 'over') {
+            if (wheelClosing) return;
             if (!wheelVisible) {
               await showWheel();
             }
@@ -324,12 +378,15 @@
   });
 
   onDestroy(() => {
+    cancelClose();
     window.removeEventListener('keydown', handleKeyDown);
     if (unlistenProgress) unlistenProgress();
     if (unlistenDragDrop) unlistenDragDrop();
     if (unlistenDragStart) unlistenDragStart();
     if (unlistenDragEnd) unlistenDragEnd();
     if (unlistenDragCancel) unlistenDragCancel();
+    if (unlistenWheelShown) unlistenWheelShown();
+    if (unlistenCloseRequested) unlistenCloseRequested();
   });
 </script>
 
@@ -339,7 +396,7 @@
 -->
 <main class="ghost-overlay">
   <!-- Radial Wheel — shown only when wheelVisible -->
-  <div class="wheel-wrapper" class:visible={wheelVisible}>
+  <div bind:this={wheelElement} class="wheel-wrapper" class:visible={wheelVisible} class:closing={wheelClosing}>
     <RadialWheel
       {formats}
       {activeIndex}
@@ -398,6 +455,15 @@
     pointer-events: all;
     opacity: 1;
     transform: scale(0.55);
+  }
+
+  .wheel-wrapper.closing {
+    pointer-events: none;
+    opacity: 0;
+    transform: scale(0.43);
+    transition:
+      opacity 0.18s cubic-bezier(0.4, 0, 1, 1),
+      transform 0.2s cubic-bezier(0.4, 0, 1, 1);
   }
 
   /* Small hint pill shown during drag without Shift held */

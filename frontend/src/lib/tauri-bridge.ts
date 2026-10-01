@@ -134,10 +134,10 @@ export async function revealInExplorer(path: string): Promise<void> {
   return invoke('reveal_in_explorer', { path });
 }
 
-export async function hideWheelWindow(): Promise<void> {
+export async function hideWheelWindow(generation: number): Promise<void> {
   if (!isTauri) return;
   const { invoke } = await import('@tauri-apps/api/core');
-  return invoke('hide_wheel_window');
+  return invoke('hide_wheel_window', { generation });
 }
 
 export async function showWheelWindow(): Promise<void> {
