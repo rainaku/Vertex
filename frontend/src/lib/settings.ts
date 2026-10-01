@@ -7,6 +7,7 @@ export function defaultOptions(): Options {
     quality: 85, dpi: 200, strip_metadata: true,
     collision_policy: 'rename_with_suffix',
     jpeg_background: [255, 255, 255], gif_alpha_threshold: 128, avif_speed: 6,
+    video_codec: 'h264', video_preset: 'medium', video_crf: 23, video_audio_kbps: 128,
   };
 }
 
@@ -27,6 +28,10 @@ export function normalizeOptions(value: Partial<Options>): Options {
       : defaults.jpeg_background,
     gif_alpha_threshold: integer(value.gif_alpha_threshold, 1, 255, 128),
     avif_speed: integer(value.avif_speed, 1, 10, 6),
+    video_codec: value.video_codec === 'h265' ? 'h265' : 'h264',
+    video_preset: value.video_preset === 'fast' || value.video_preset === 'slow' ? value.video_preset : 'medium',
+    video_crf: integer(value.video_crf, 18, 35, 23),
+    video_audio_kbps: integer(value.video_audio_kbps, 64, 320, 128),
   };
 }
 

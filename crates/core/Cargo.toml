@@ -19,7 +19,6 @@ rgb.workspace = true
 sha2.workspace = true
 regex.workspace = true
 
-[dev-dependencies]
 tempfile = "3.16"
 
 [dependencies.url]

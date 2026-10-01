@@ -9,10 +9,12 @@
     getAvailableTargets,
     getBatchInfo,
     convertFile,
+    cancelJob,
     listenProgress,
     sendDesktopNotification,
     setWindowPassthrough,
     hideWheelWindow,
+    forceHideWheelWindow,
     setConvertingState,
     isTauri,
   } from './lib/tauri-bridge';
@@ -55,8 +57,20 @@
     if (status === 'converting') return;
     clearDragDwell();
     isDragging = false;
+    wheelVisible = false;
+    wheelClosing = false;
     settingsVisible = true;
-    await showWheel();
+    await setWindowPassthrough(false);
+  }
+
+  async function closeSettings() {
+    settingsVisible = false;
+    wheelVisible = false;
+    wheelClosing = false;
+    isDragging = false;
+    clearDragDwell();
+    await setWindowPassthrough(true);
+    await forceHideWheelWindow();
   }
 
   let unlistenProgress: (() => void) | null = null;
@@ -116,6 +130,7 @@
   // ─── Wheel visibility ────────────────────────────────────────────────────────
 
   async function showWheel() {
+    if (settingsVisible) return;
     cancelClose();
     if (wheelVisible) return;
     wheelVisible = true;
@@ -179,7 +194,7 @@
         currentFile = info;
         sourceFormatLabel = info.label;
         const targets = await getAvailableTargets(info.format);
-        allAvailableFormats = targets.length > 0 ? targets : [];
+        allAvailableFormats = [...targets].sort((a, b) => Number(b.format === info.format) - Number(a.format === info.format));
         page = 0;
         updatePagedFormats();
       } catch (e) {
@@ -210,10 +225,11 @@
     activeIndex = index;
     status = 'converting';
     progress = 0.05;
-    await showWheel();
-    await setConvertingState(true);
-
+    cancelClose();
+    wheelVisible = true;
     const jobId = `job_${Date.now()}`;
+    activeJobId = jobId;
+    stopping = false;
     const firstPath = currentFilePaths[0];
 
     try {
@@ -230,6 +246,12 @@
             await hideWheel();
           }
         }, 1200);
+      } else if (res.cancelled) {
+        status = 'idle';
+        convertingIndex = -1;
+        activeIndex = -1;
+        progress = 0;
+        await hideWheel();
       } else {
         status = 'error';
         setTimeout(async () => {
@@ -245,7 +267,19 @@
         convertingIndex = -1;
         await setConvertingState(false);
       }, 2000);
+    } finally {
+      activeJobId = null;
+      stopping = false;
     }
+  }
+
+  let activeJobId: string | null = null;
+  let stopping = false;
+  async function stopConversion() {
+    if (!activeJobId || stopping) return;
+    stopping = true;
+    try { await cancelJob(activeJobId); }
+    catch (error) { stopping = false; console.warn('Cancel failed:', error); }
   }
 
   // ─── Keyboard ────────────────────────────────────────────────────────────────
@@ -253,6 +287,7 @@
   function handleKeyDown(e: KeyboardEvent) {
     if (settingsVisible) return;
     if (e.key === 'Escape') {
+      if (activeJobId) { void stopConversion(); return; }
       hideWheel();
     }
   }
@@ -266,12 +301,14 @@
 
     // Subscribe to conversion progress
     unlistenProgress = await listenProgress((payload) => {
-      progress = payload.progress;
-      if (payload.status === 'done') {
-        status = 'done';
-      } else if (payload.status === 'error') {
-        status = 'error';
+      if (payload.job_id !== activeJobId) return;
+      if (stopping) {
+        // Also covers a stop click before the conversion command registered
+        // its token. Progress is emitted only after registration.
+        void cancelJob(payload.job_id).catch(error => console.warn('Cancel failed:', error));
+        return;
       }
+      progress = payload.progress;
     });
 
     // Tauri drag-and-drop & global shortcut events
@@ -285,11 +322,14 @@
         unlistenWheelShown = await listen<{ generation: number; focus: boolean }>('wheel_shown', (event) => {
           nativeGeneration = event.payload.generation;
           cancelClose();
-          if (event.payload.focus) void showWheel();
+          if (event.payload.focus && !settingsVisible) void showWheel();
         });
         unlistenCloseRequested = await listen('wheel_close_requested', () => {
-          settingsVisible = false;
-          void hideWheel();
+          if (settingsVisible) {
+            void closeSettings();
+          } else {
+            void hideWheel();
+          }
         });
 
         // 1. Listen for global Shift+Drag events from Rust background thread
@@ -414,7 +454,7 @@
 -->
 <main class="ghost-overlay">
   <!-- Radial Wheel — shown only when wheelVisible -->
-  <div bind:this={wheelElement} class="wheel-wrapper" class:visible={wheelVisible} class:closing={wheelClosing}>
+  <div bind:this={wheelElement} class="wheel-wrapper" class:visible={wheelVisible && !settingsVisible} class:closing={wheelClosing}>
     <RadialWheel
       {formats}
       {activeIndex}
@@ -428,7 +468,8 @@
       onSelectFormat={(fmt) => startConversion(fmt, activeIndex)}
       onHoverChange={(idx) => activeIndex = idx}
       onNextPage={handleNextPage}
-      onCenterClick={() => { void openSettings(); }}
+      {stopping}
+      onCenterClick={() => { if (activeJobId) void stopConversion(); else void openSettings(); }}
     />
   </div>
 
@@ -443,7 +484,14 @@
 </main>
 
 {#if settingsVisible}
-  <OptionsPanel {options} onClose={() => settingsVisible = false} onSave={(value) => { options = value; settingsVisible = false; }} />
+  <OptionsPanel
+    {options}
+    onClose={closeSettings}
+    onSave={(value) => {
+      options = value;
+      void closeSettings();
+    }}
+  />
 {/if}
 
 <style>

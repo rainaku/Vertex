@@ -36,6 +36,28 @@ pub struct Options {
     pub gif_alpha_threshold: u8,
     /// AVIF encoding speed, 1 (slowest) through 10 (fastest).
     pub avif_speed: u8,
+    pub video_codec: VideoCodec,
+    pub video_preset: VideoPreset,
+    /// Constant-quality value for H.264/H.265. Lower means higher quality.
+    pub video_crf: u8,
+    pub video_audio_kbps: u16,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum VideoCodec {
+    #[default]
+    H264,
+    H265,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum VideoPreset {
+    Fast,
+    #[default]
+    Medium,
+    Slow,
 }
 
 impl Default for Options {
@@ -51,6 +73,10 @@ impl Default for Options {
             jpeg_background: [255, 255, 255],
             gif_alpha_threshold: 128,
             avif_speed: 6,
+            video_codec: VideoCodec::H264,
+            video_preset: VideoPreset::Medium,
+            video_crf: 23,
+            video_audio_kbps: 128,
         }
     }
 }

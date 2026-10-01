@@ -1,7 +1,7 @@
 pub mod commands;
 pub mod drag_detector;
-mod wheel_window;
 mod logging;
+mod wheel_window;
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -40,6 +40,7 @@ pub fn run() {
             cancel_job,
             reveal_in_explorer,
             hide_wheel_window,
+            force_hide_wheel_window,
             show_wheel_window,
             set_window_passthrough,
             set_converting_state,
@@ -54,12 +55,17 @@ pub fn run() {
             let settings_i =
                 MenuItem::with_id(app, "settings", "Cài đặt nâng cao…", true, None::<&str>)?;
             let tray_menu = Menu::with_items(app, &[&toggle_i, &settings_i, &quit_i])?;
-            app.manage(LanguageMenu { toggle: toggle_i, settings: settings_i, quit: quit_i });
+            app.manage(LanguageMenu {
+                toggle: toggle_i,
+                settings: settings_i,
+                quit: quit_i,
+            });
 
-            let _tray = TrayIconBuilder::new()
+            let _tray = TrayIconBuilder::with_id("vertex")
+                .icon(app.default_window_icon().ok_or_else(|| std::io::Error::other("Missing Vertex app icon"))?.clone())
                 .menu(&tray_menu)
                 .show_menu_on_left_click(false)
-                .tooltip("Vertex - File Converter Wheel")
+                .tooltip("Vertex")
                 .on_menu_event(|app, event| match event.id().as_ref() {
                     "toggle" => {
                         if let Some(win) = app.get_webview_window("main") {

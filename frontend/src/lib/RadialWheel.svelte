@@ -7,6 +7,7 @@
   export let activeIndex: number = -1;
   export let convertingIndex: number = -1;
   export let progress: number = 0;
+  export let stopping = false;
   export let status: 'idle' | 'converting' | 'done' | 'error' = 'idle';
   export let sourceFormat: string | null = null;
   export let hasMorePages: boolean = false;
@@ -174,7 +175,7 @@
           on:keydown={(e) => (e.key === 'Enter' || e.key === ' ') && handleClick(i)}
           role="button"
           tabindex={0}
-          aria-label={label}
+          aria-label={fmt?.format === sourceFormat ? `${label}: ${$t("Giữ định dạng, xử lý lại")}` : label}
         >
           <!-- Petal sector shape -->
           <path
@@ -254,7 +255,8 @@
       class="center-hub"
       role="button"
       tabindex={0}
-      aria-label={$t("Mở cài đặt nâng cao")}
+      aria-label={$t(status === "converting" ? (stopping ? "Đang dừng…" : "Dừng") : "Mở cài đặt nâng cao")}
+      aria-disabled={stopping}
       on:click={onCenterClick}
       on:keydown={(e) => (e.key === 'Enter' || e.key === ' ') && onCenterClick()}
     />
@@ -266,7 +268,8 @@
       transform="translate({CX}, {CY})"
       role="button"
       tabindex={0}
-      aria-label={$t("Mở cài đặt nâng cao")}
+      aria-label={$t(status === "converting" ? (stopping ? "Đang dừng…" : "Dừng") : "Mở cài đặt nâng cao")}
+      aria-disabled={stopping}
       on:click={onCenterClick}
       on:keydown={(e) => (e.key === 'Enter' || e.key === ' ') && onCenterClick()}
     >
@@ -284,17 +287,17 @@
         class="center-pill-text"
       >
         {#if status === 'converting'}
-          {Math.round(progress * 100)}%
+          <tspan font-size={stopping ? 13 : 18}>■ {$t(stopping ? "Đang dừng…" : "Dừng")}</tspan>
         {:else if status === 'done'}
           ✓ {$t("Xong")}
         {:else if activeFormat}
-          <tspan x="0" y="-3" font-size="13" font-weight="800">{activeFormat.label}</tspan>
-          <tspan x="0" y="11" font-size="8.5" font-weight="700" letter-spacing="1px" opacity="0.65">
-            {$t(activeFormat.category === 'image' ? 'Ảnh' : activeFormat.category === 'audio' ? 'Âm thanh' : activeFormat.category === 'video' ? 'Video' : activeFormat.category === 'document' ? 'Tài liệu' : 'Định dạng')}
+          <tspan x="0" y="-5" font-size="18" font-weight="800">{activeFormat.label}</tspan>
+          <tspan x="0" y="12" font-size="11" font-weight="700" letter-spacing="0.3px" opacity="0.65">
+            {$t(activeFormat.format === sourceFormat ? 'Nén lại' : activeFormat.category === 'image' ? 'Ảnh' : activeFormat.category === 'audio' ? 'Âm thanh' : activeFormat.category === 'video' ? 'Video' : activeFormat.category === 'document' ? 'Tài liệu' : 'Định dạng')}
           </tspan>
         {:else if activeIndex === 7 && hasMorePages}
-          <tspan x="0" y="-3" font-size="12" font-weight="800">{$t("Trang")} {(page + 1) % totalPages + 1}/{totalPages}</tspan>
-          <tspan x="0" y="11" font-size="8.5" font-weight="700" letter-spacing="1px" opacity="0.65">{$t("Trang tiếp")}</tspan>
+          <tspan x="0" y="-5" font-size="16" font-weight="800">{$t("Trang")} {(page + 1) % totalPages + 1}/{totalPages}</tspan>
+          <tspan x="0" y="12" font-size="11" font-weight="700" letter-spacing="0.3px" opacity="0.65">{$t("Trang tiếp")}</tspan>
         {:else if sourceFormat}
           {sourceFormat}
         {:else}
@@ -365,7 +368,7 @@
 
   .petal-text {
     font-family: var(--font-family);
-    font-size: 15px;
+    font-size: 22px;
     font-weight: 700;
     letter-spacing: 0.8px;
     fill: var(--petal-text, #ffffff);
@@ -387,7 +390,7 @@
 
   .petal-group.active .petal-text {
     fill: var(--petal-hover-text, #000000);
-    font-size: 16px;
+    font-size: 23px;
     font-weight: 800;
   }
 
@@ -446,7 +449,7 @@
 
   .petal-text-converting {
     font-family: var(--font-family);
-    font-size: 15px;
+    font-size: 22px;
     font-weight: 700;
     letter-spacing: 0.5px;
     fill: #ffffff;
@@ -454,7 +457,7 @@
 
   .petal-text-percent {
     font-family: var(--font-family);
-    font-size: 12px;
+    font-size: 16px;
     font-weight: 700;
     letter-spacing: 0.5px;
     fill: #a1a1aa;
@@ -546,7 +549,7 @@
 
   .center-pill-text {
     font-family: var(--font-family);
-    font-size: 13px;
+    font-size: 18px;
     font-weight: 700;
     letter-spacing: 0.8px;
     fill: var(--center-pill-text, #ffffff);
@@ -581,7 +584,7 @@
     padding: 6px 14px;
     color: #ffffff;
     font-family: var(--font-family);
-    font-size: 12px;
+    font-size: 16px;
     font-weight: 600;
     white-space: nowrap;
     box-shadow: 0 10px 28px rgba(0, 0, 0, 0.75);

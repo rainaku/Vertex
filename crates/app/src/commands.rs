@@ -38,6 +38,7 @@ pub struct ProgressPayload {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConvertResult {
+    pub cancelled: bool,
     pub success: bool,
     pub output_path: String,
     pub target_format: Format,
@@ -56,14 +57,19 @@ pub struct LanguageMenu {
 }
 
 #[tauri::command]
-pub fn set_app_language(language: String, menu: tauri::State<'_, LanguageMenu>) -> Result<(), String> {
+pub fn set_app_language(
+    language: String,
+    menu: tauri::State<'_, LanguageMenu>,
+) -> Result<(), String> {
     let (toggle, settings, quit) = match language.as_str() {
         "vi" => ("Hiện / ẩn Vertex", "Cài đặt nâng cao…", "Thoát Vertex"),
         "en" => ("Show / hide Vertex", "Advanced settings…", "Quit Vertex"),
         _ => return Err("Unsupported language".into()),
     };
     menu.toggle.set_text(toggle).map_err(|e| e.to_string())?;
-    menu.settings.set_text(settings).map_err(|e| e.to_string())?;
+    menu.settings
+        .set_text(settings)
+        .map_err(|e| e.to_string())?;
     menu.quit.set_text(quit).map_err(|e| e.to_string())?;
     Ok(())
 }
@@ -196,11 +202,7 @@ pub async fn convert_file(
             ProgressPayload {
                 job_id: job_id_clone.clone(),
                 progress: p,
-                status: if p >= 1.0 {
-                    "done".to_string()
-                } else {
-                    "converting".to_string()
-                },
+                status: "converting".to_string(),
             },
         );
     };
@@ -209,8 +211,7 @@ pub async fn convert_file(
     let result = tokio::task::spawn_blocking(move || {
         registry.convert(&input, target_format, &opts, &progress_cb, &cancel)
     })
-    .await
-    .map_err(|e| e.to_string())?;
+    .await;
 
     // Cleanup cancel token
     {
@@ -220,7 +221,7 @@ pub async fn convert_file(
 
     crate::drag_detector::set_is_converting(false);
 
-    match result {
+    match result.map_err(|e| e.to_string())? {
         Ok(out_path) => {
             let path_str = out_path.to_string_lossy().to_string();
 
@@ -235,6 +236,7 @@ pub async fn convert_file(
             );
 
             Ok(ConvertResult {
+                cancelled: false,
                 success: true,
                 output_path: path_str,
                 target_format,
@@ -253,6 +255,7 @@ pub async fn convert_file(
             );
 
             Ok(ConvertResult {
+                cancelled: matches!(e, vertex_core::VertexError::Cancelled),
                 success: false,
                 output_path: String::new(),
                 target_format,
@@ -264,9 +267,8 @@ pub async fn convert_file(
 
 #[tauri::command]
 pub async fn cancel_job(job_id: String, state: tauri::State<'_, AppState>) -> Result<bool, String> {
-    crate::drag_detector::set_is_converting(false);
-    let mut map = state.active_cancels.lock().unwrap();
-    if let Some(token) = map.remove(&job_id) {
+    let map = state.active_cancels.lock().unwrap();
+    if let Some(token) = map.get(&job_id) {
         token.cancel();
         Ok(true)
     } else {
@@ -313,6 +315,15 @@ pub fn hide_wheel_window(app: AppHandle, generation: u32) -> Result<(), String> 
     if generation != crate::wheel_window::generation() {
         return Ok(());
     }
+    crate::drag_detector::set_is_converting(false);
+    if let Some(win) = app.get_webview_window("main") {
+        crate::wheel_window::hide(&win)?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn force_hide_wheel_window(app: AppHandle) -> Result<(), String> {
     crate::drag_detector::set_is_converting(false);
     if let Some(win) = app.get_webview_window("main") {
         crate::wheel_window::hide(&win)?;

@@ -2,12 +2,11 @@ use std::fs;
 use std::path::Path;
 
 fn main() {
-    let source_png = Path::new("frontend/vertex.png");
     let source_ico = Path::new("frontend/vertex.ico");
     let icons_dir = Path::new("crates/app/icons");
     fs::create_dir_all(icons_dir).unwrap();
 
-    let img = image::open(source_png).expect("Failed to open frontend/vertex.png");
+    let img = image::open(source_ico).expect("Failed to open frontend/vertex.ico");
     println!("Loaded source image: {}x{}", img.width(), img.height());
 
     // 32x32
@@ -33,11 +32,18 @@ fn main() {
             image::ImageFormat::Png,
         )
         .unwrap();
-    fs::write(icons_dir.join("icon.icns"), &buf_256).unwrap();
+    // ICNS container with an ic08 (256px PNG) entry, not a renamed PNG.
+    let mut icns = Vec::new();
+    icns.extend_from_slice(b"icns");
+    icns.extend_from_slice(&((16 + buf_256.len()) as u32).to_be_bytes());
+    icns.extend_from_slice(b"ic08");
+    icns.extend_from_slice(&((8 + buf_256.len()) as u32).to_be_bytes());
+    icns.extend_from_slice(&buf_256);
+    fs::write(icons_dir.join("icon.icns"), icns).unwrap();
 
     // Also copy to frontend/public for browser favicon
     let public_dir = Path::new("frontend/public");
-    fs::copy(source_png, public_dir.join("vertex.png")).unwrap();
+    img.save(public_dir.join("vertex.png")).unwrap();
     fs::copy(source_ico, public_dir.join("favicon.ico")).unwrap();
 
     println!("All icons generated and copied successfully!");

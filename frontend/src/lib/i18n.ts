@@ -7,7 +7,33 @@ function initialLanguage(): Language {
 }
 export const language = writable<Language>(initialLanguage());
 const vi = {
+  "Dừng": "Dừng",
+  "Đang dừng…": "Đang dừng…",
+  "Nén video": "Nén video",
+  "Bộ mã hóa": "Bộ mã hóa",
+  "H.264: dễ phát trên nhiều thiết bị": "H.264: dễ phát trên nhiều thiết bị",
+  "H.265: nén hiệu quả, cần thiết bị hỗ trợ": "H.265: nén hiệu quả, cần thiết bị hỗ trợ",
+  "Tốc độ xử lý": "Tốc độ xử lý",
+  "Nhanh": "Nhanh",
+  "Vừa": "Vừa",
+  "Chậm, nén kỹ hơn": "Chậm, nén kỹ hơn",
+  "Chất lượng video (CRF)": "Chất lượng video (CRF)",
+  "Số thấp giữ nhiều chi tiết hơn, số cao thường cho file nhỏ hơn.": "Số thấp giữ nhiều chi tiết hơn, số cao thường cho file nhỏ hơn.",
+  "Âm thanh video (kbps)": "Âm thanh video (kbps)",
+  "Áp dụng cho MP4, MOV, MKV và TS. Mã hóa lại có thể giảm chất lượng; file không phải lúc nào cũng nhỏ hơn.": "Áp dụng cho MP4, MOV, MKV và TS. Mã hóa lại có thể giảm chất lượng; file không phải lúc nào cũng nhỏ hơn.",
+  "Nén lại": "Nén lại",
+  "Giữ định dạng, xử lý lại": "Giữ định dạng, xử lý lại",
+
+  "Cài đặt": "Cài đặt",
   "Cài đặt nâng cao": "Cài đặt nâng cao",
+  "Chung": "Chung",
+  "Hình ảnh": "Hình ảnh",
+  "Nâng cao": "Nâng cao",
+  "Xóa siêu dữ liệu (EXIF)": "Xóa siêu dữ liệu (EXIF)",
+  "Bảo vệ vị trí & quyền riêng tư": "Bảo vệ vị trí & quyền riêng tư",
+  "Độ phân giải PDF (DPI)": "Độ phân giải PDF (DPI)",
+  "Kích thước tối đa (px)": "Kích thước tối đa (px)",
+  "Duyệt…": "Duyệt…",
   "Đóng cài đặt": "Đóng cài đặt",
   "Cấu hình nhanh": "Cấu hình nhanh",
   "Cân bằng": "Cân bằng",
@@ -67,7 +93,33 @@ const vi = {
   "Vertex – Chuyển đổi tệp": "Vertex – Chuyển đổi tệp"
 };
 const en: Record<keyof typeof vi, string> = {
+  "Dừng": "Stop",
+  "Đang dừng…": "Stopping…",
+  "Nén video": "Video compression",
+  "Bộ mã hóa": "Video codec",
+  "H.264: dễ phát trên nhiều thiết bị": "H.264: broad compatibility",
+  "H.265: nén hiệu quả, cần thiết bị hỗ trợ": "H.265: efficient compression, requires playback support",
+  "Tốc độ xử lý": "Encoding speed",
+  "Nhanh": "Fast",
+  "Vừa": "Medium",
+  "Chậm, nén kỹ hơn": "Slow, more compression effort",
+  "Chất lượng video (CRF)": "Video quality (CRF)",
+  "Số thấp giữ nhiều chi tiết hơn, số cao thường cho file nhỏ hơn.": "Lower values keep more detail; higher values usually make smaller files.",
+  "Âm thanh video (kbps)": "Video audio (kbps)",
+  "Áp dụng cho MP4, MOV, MKV và TS. Mã hóa lại có thể giảm chất lượng; file không phải lúc nào cũng nhỏ hơn.": "Applies to MP4, MOV, MKV and TS. Re-encoding can reduce quality and does not always make files smaller.",
+  "Nén lại": "Re-encode",
+  "Giữ định dạng, xử lý lại": "Same format, re-encode",
+
+  "Cài đặt": "Settings",
   "Cài đặt nâng cao": "Advanced settings",
+  "Chung": "General",
+  "Hình ảnh": "Quality",
+  "Nâng cao": "Advanced",
+  "Xóa siêu dữ liệu (EXIF)": "Strip metadata (EXIF)",
+  "Bảo vệ vị trí & quyền riêng tư": "Protect location & device privacy",
+  "Độ phân giải PDF (DPI)": "PDF resolution (DPI)",
+  "Kích thước tối đa (px)": "Max dimensions (px)",
+  "Duyệt…": "Browse…",
   "Đóng cài đặt": "Close settings",
   "Cấu hình nhanh": "Presets",
   "Cân bằng": "Balanced",
@@ -136,8 +188,14 @@ export async function syncNativeLanguage(lang: Language) {
   }
 }
 export async function setLanguage(lang: Language) {
+  const previous = get(language);
   await syncNativeLanguage(lang);
-  localStorage.setItem(key, lang);
+  try {
+    localStorage.setItem(key, lang);
+  } catch (error) {
+    await syncNativeLanguage(previous);
+    throw error;
+  }
   language.set(lang);
 }
 language.subscribe(lang => {

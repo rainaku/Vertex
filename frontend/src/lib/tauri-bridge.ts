@@ -48,7 +48,6 @@ export async function getAvailableTargets(from: string): Promise<TargetFormatInf
     }
 
     return pool
-      .filter((f) => f !== from)
       .map((f) => {
         let cat = 'image';
         if (audio.includes(f)) cat = 'audio';
@@ -139,6 +138,12 @@ export async function hideWheelWindow(generation: number): Promise<void> {
   if (!isTauri) return;
   const { invoke } = await import('@tauri-apps/api/core');
   return invoke('hide_wheel_window', { generation });
+}
+
+export async function forceHideWheelWindow(): Promise<void> {
+  if (!isTauri) return;
+  const { invoke } = await import('@tauri-apps/api/core');
+  return invoke('force_hide_wheel_window');
 }
 
 export async function showWheelWindow(): Promise<void> {

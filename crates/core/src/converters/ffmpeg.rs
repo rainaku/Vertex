@@ -338,44 +338,7 @@ impl Converter for FfmpegConverter {
             // Audio to audio transcoding
             append_audio_codec_args(&mut args, to_format);
         } else if from_format == Format::Gif && matches!(to_format.category(), Category::Video) {
-            // GIF to video
-            match to_format {
-                Format::Mp4 => {
-                    args.extend([
-                        "-movflags".into(),
-                        "+faststart".into(),
-                        "-pix_fmt".into(),
-                        "yuv420p".into(),
-                        "-vf".into(),
-                        "scale=trunc(iw/2)*2:trunc(ih/2)*2".into(),
-                        "-c:v".into(),
-                        "libx264".into(),
-                        "-preset".into(),
-                        "veryfast".into(),
-                        "-crf".into(),
-                        "20".into(),
-                    ]);
-                }
-                Format::Webm => {
-                    args.extend([
-                        "-pix_fmt".into(),
-                        "yuv420p".into(),
-                        "-vf".into(),
-                        "scale=trunc(iw/2)*2:trunc(ih/2)*2".into(),
-                        "-c:v".into(),
-                        "libvpx-vp9".into(),
-                        "-crf".into(),
-                        "28".into(),
-                        "-b:v".into(),
-                        "0".into(),
-                        "-deadline".into(),
-                        "realtime".into(),
-                        "-cpu-used".into(),
-                        "4".into(),
-                    ]);
-                }
-                _ => {}
-            }
+            append_video_codec_args(&mut args, to_format, opts);
         } else if matches!(from_format.category(), Category::Video) {
             // Video to video or Video to GIF
             if to_format == Format::Gif {
@@ -418,27 +381,58 @@ impl Converter for FfmpegConverter {
             source: e,
         })?;
 
+        let stderr = child
+            .stderr
+            .take()
+            .ok_or_else(|| VertexError::Internal("Missing FFmpeg stderr".into()))?;
+        let stderr_reader = std::thread::spawn(move || {
+            use std::io::Read;
+            let mut reader = stderr;
+            let mut tail = Vec::new();
+            let mut buffer = [0u8; 4096];
+            while let Ok(count) = reader.read(&mut buffer) {
+                if count == 0 {
+                    break;
+                }
+                tail.extend_from_slice(&buffer[..count]);
+                if tail.len() > 16384 {
+                    tail.drain(..tail.len() - 16384);
+                }
+            }
+            String::from_utf8_lossy(&tail).into_owned()
+        });
+
         let stdout = child
             .stdout
             .take()
             .ok_or_else(|| VertexError::Internal("Failed to capture FFmpeg stdout".to_string()))?;
 
-        let mut reader = BufReader::new(stdout);
-        let mut line = String::new();
+        let (sender, receiver) = std::sync::mpsc::sync_channel(64);
+        let stdout_reader = std::thread::spawn(move || {
+            for line in BufReader::new(stdout).lines() {
+                let Ok(line) = line else {
+                    break;
+                };
+                if sender.send(line).is_err() {
+                    break;
+                }
+            }
+        });
 
         // Monitor progress and cancellation in real time
         loop {
             if cancel.is_cancelled() {
                 let _ = child.kill();
                 let _ = child.wait();
+                drop(receiver);
+                let _ = stdout_reader.join();
+                let _ = stderr_reader.join();
                 let _ = std::fs::remove_file(output);
                 return Err(VertexError::Cancelled);
             }
 
-            line.clear();
-            match reader.read_line(&mut line) {
-                Ok(0) => break, // EOF
-                Ok(_) => {
+            match receiver.recv_timeout(std::time::Duration::from_millis(50)) {
+                Ok(line) => {
                     let trimmed = line.trim();
                     if let Some((k, v)) = trimmed.split_once('=') {
                         match k {
@@ -463,8 +457,23 @@ impl Converter for FfmpegConverter {
                         }
                     }
                 }
-                Err(_) => break,
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
             }
+        }
+        let _ = stdout_reader.join();
+        while child
+            .try_wait()
+            .map_err(|source| VertexError::Io {
+                path: output.to_path_buf(),
+                source,
+            })?
+            .is_none()
+        {
+            if cancel.is_cancelled() {
+                let _ = child.kill();
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
         }
 
         let status = child.wait().map_err(|e| VertexError::Io {
@@ -472,12 +481,9 @@ impl Converter for FfmpegConverter {
             source: e,
         })?;
 
+        let err_msg = stderr_reader.join().unwrap_or_default();
+        cancel.check()?;
         if !status.success() {
-            let mut err_msg = String::new();
-            if let Some(mut stderr) = child.stderr.take() {
-                use std::io::Read;
-                let _ = stderr.read_to_string(&mut err_msg);
-            }
             let _ = std::fs::remove_file(output);
             return Err(VertexError::Encoding(format!(
                 "FFmpeg conversion failed: {}",
@@ -550,6 +556,40 @@ fn append_audio_codec_args(args: &mut Vec<String>, target: Format) {
 }
 
 fn append_video_codec_args(args: &mut Vec<String>, target: Format, opts: &Options) {
+    if matches!(target, Format::Mp4 | Format::Mov | Format::Mkv | Format::Ts) {
+        use crate::options::{VideoCodec, VideoPreset};
+        let codec = match opts.video_codec {
+            VideoCodec::H264 => "libx264",
+            VideoCodec::H265 => "libx265",
+        };
+        let preset = match opts.video_preset {
+            VideoPreset::Fast => "fast",
+            VideoPreset::Medium => "medium",
+            VideoPreset::Slow => "slow",
+        };
+        let width = opts
+            .max_width
+            .map(|w| format!("min(iw,{})", w.max(2)))
+            .unwrap_or("iw".into());
+        let height = opts
+            .max_height
+            .map(|h| format!("min(ih,{})", h.max(2)))
+            .unwrap_or("ih".into());
+        // Keep aspect ratio, avoid upscaling, and satisfy 4:2:0 even dimensions.
+        args.extend([
+            "-vf".into(), format!("scale=w='{width}':h='{height}':force_original_aspect_ratio=decrease:force_divisible_by=2"),
+            "-c:v".into(), codec.into(), "-preset".into(), preset.into(),
+            "-crf".into(), opts.video_crf.clamp(18, 35).to_string(),
+            "-c:a".into(), "aac".into(), "-b:a".into(), format!("{}k", opts.video_audio_kbps.clamp(64, 320)),
+        ]);
+        if matches!(target, Format::Mp4 | Format::Mov) {
+            args.extend(["-movflags".into(), "+faststart".into()]);
+            if matches!(opts.video_codec, VideoCodec::H265) {
+                args.extend(["-tag:v".into(), "hvc1".into()]);
+            }
+        }
+        return;
+    }
     // Resize video if options specify max dimensions
     if let (Some(w), Some(h)) = (opts.max_width, opts.max_height) {
         args.extend([
@@ -563,50 +603,6 @@ fn append_video_codec_args(args: &mut Vec<String>, target: Format, opts: &Option
     }
 
     match target {
-        Format::Mp4 => {
-            args.extend([
-                "-c:v".into(),
-                "libx264".into(),
-                "-preset".into(),
-                "veryfast".into(),
-                "-crf".into(),
-                "22".into(),
-                "-c:a".into(),
-                "aac".into(),
-                "-b:a".into(),
-                "192k".into(),
-                "-movflags".into(),
-                "+faststart".into(),
-            ]);
-        }
-        Format::Mov => {
-            args.extend([
-                "-c:v".into(),
-                "libx264".into(),
-                "-preset".into(),
-                "veryfast".into(),
-                "-crf".into(),
-                "22".into(),
-                "-c:a".into(),
-                "aac".into(),
-                "-b:a".into(),
-                "192k".into(),
-            ]);
-        }
-        Format::Mkv => {
-            args.extend([
-                "-c:v".into(),
-                "libx264".into(),
-                "-preset".into(),
-                "veryfast".into(),
-                "-crf".into(),
-                "22".into(),
-                "-c:a".into(),
-                "aac".into(),
-                "-b:a".into(),
-                "192k".into(),
-            ]);
-        }
         Format::Webm => {
             args.extend([
                 "-c:v".into(),
@@ -649,20 +645,6 @@ fn append_video_codec_args(args: &mut Vec<String>, target: Format, opts: &Option
                 "aac".into(),
                 "-b:a".into(),
                 "64k".into(),
-            ]);
-        }
-        Format::Ts => {
-            args.extend([
-                "-c:v".into(),
-                "libx264".into(),
-                "-preset".into(),
-                "veryfast".into(),
-                "-crf".into(),
-                "22".into(),
-                "-c:a".into(),
-                "aac".into(),
-                "-b:a".into(),
-                "192k".into(),
             ]);
         }
         _ => {

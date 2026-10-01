@@ -27,6 +27,7 @@ export interface ProgressPayload {
 }
 
 export interface ConvertResult {
+  cancelled?: boolean;
   success: boolean;
   output_path: string;
   target_format: string;
@@ -44,4 +45,8 @@ export interface Options {
   jpeg_background?: [number, number, number];
   gif_alpha_threshold?: number;
   avif_speed?: number;
+  video_codec?: 'h264' | 'h265';
+  video_preset?: 'fast' | 'medium' | 'slow';
+  video_crf?: number;
+  video_audio_kbps?: number;
 }

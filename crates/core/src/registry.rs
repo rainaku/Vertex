@@ -113,8 +113,53 @@ impl Registry {
         progress: &dyn Fn(f32),
         cancel: &CancelToken,
     ) -> Result<PathBuf> {
+        cancel.check()?;
+        let destination = resolve_target_path(input, target_format, opts)?;
+        let staged = tempfile::Builder::new()
+            .prefix(".vertex-")
+            .suffix(&format!(".{}", target_format.extension()))
+            .tempfile_in(destination.parent().unwrap_or(Path::new(".")))
+            .map_err(|source| VertexError::Io {
+                path: destination.clone(),
+                source,
+            })?
+            .into_temp_path();
+        self.convert_staged(
+            input,
+            target_format,
+            opts,
+            progress,
+            cancel,
+            staged.to_path_buf(),
+        )?;
+        cancel.check()?;
+        // Publish only after success. Cancellation drops the private temporary
+        // output, leaving both the source and any existing destination intact.
+        let result = if matches!(
+            opts.collision_policy,
+            crate::options::CollisionPolicy::Overwrite
+        ) {
+            staged.persist(&destination)
+        } else {
+            staged.persist_noclobber(&destination)
+        };
+        result.map_err(|error| VertexError::Io {
+            path: destination.clone(),
+            source: error.error,
+        })?;
+        Ok(destination)
+    }
+
+    fn convert_staged(
+        &self,
+        input: &Path,
+        target_format: Format,
+        opts: &Options,
+        progress: &dyn Fn(f32),
+        cancel: &CancelToken,
+        output_path: PathBuf,
+    ) -> Result<PathBuf> {
         let from_format = detect_format(input)?;
-        let output_path = resolve_target_path(input, target_format, opts)?;
 
         // Find direct converter
         if let Some(conv) = self.find_converter(from_format, target_format) {
@@ -129,13 +174,28 @@ impl Registry {
             }
         }
 
+        // Re-encoding needs a real converter; an empty BFS path must not
+        // report success for an output file that was never created.
+        if from_format == target_format {
+            return Err(VertexError::NoConversionRoute {
+                from: from_format.to_string(),
+                to: target_format.to_string(),
+            });
+        }
+
         // Multi-hop path search (BFS)
         if let Some(path) = self.find_path(from_format, target_format) {
             let mut current_input = input.to_path_buf();
             let total_steps = path.len();
 
-            let temp_dir = std::env::temp_dir().join(format!("vertex_{}", std::process::id()));
-            let _ = std::fs::create_dir_all(&temp_dir);
+            let temp_guard = tempfile::Builder::new()
+                .prefix("vertex-")
+                .tempdir()
+                .map_err(|source| VertexError::Io {
+                    path: std::env::temp_dir(),
+                    source,
+                })?;
+            let temp_dir = temp_guard.path();
 
             for (idx, (step_from, step_to)) in path.iter().enumerate() {
                 cancel.check()?;
@@ -171,14 +231,13 @@ impl Registry {
                 )?;
 
                 // Clean up previous temporary file if it was intermediate
-                if idx > 0 && current_input.starts_with(&temp_dir) {
+                if idx > 0 && current_input.starts_with(temp_dir) {
                     let _ = std::fs::remove_file(&current_input);
                 }
 
                 current_input = step_output;
             }
 
-            let _ = std::fs::remove_dir(&temp_dir);
             return Ok(output_path);
         }
 
