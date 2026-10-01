@@ -5,11 +5,7 @@ use crate::format::Format;
 use crate::options::{CollisionPolicy, Options};
 
 /// Resolve safe target file path according to Options and CollisionPolicy.
-pub fn resolve_target_path(
-    input: &Path,
-    target_format: Format,
-    opts: &Options,
-) -> Result<PathBuf> {
+pub fn resolve_target_path(input: &Path, target_format: Format, opts: &Options) -> Result<PathBuf> {
     let output_dir = if let Some(dir) = &opts.output_dir {
         dir.clone()
     } else {
@@ -34,7 +30,8 @@ pub fn resolve_target_path(
 
     let candidate = output_dir.join(format!("{}.{}", stem, ext));
 
-    let is_same_as_input = if let (Ok(c), Ok(i)) = (candidate.canonicalize(), input.canonicalize()) {
+    let is_same_as_input = if let (Ok(c), Ok(i)) = (candidate.canonicalize(), input.canonicalize())
+    {
         c == i
     } else {
         candidate == input

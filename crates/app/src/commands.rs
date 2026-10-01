@@ -2,9 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, Manager};
-use vertex_core::{
-    detect_format, Availability, CancelToken, Category, Format, Options, Registry,
-};
+use vertex_core::{detect_format, Availability, CancelToken, Category, Format, Options, Registry};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FormatInfo {
@@ -49,6 +47,25 @@ pub struct ConvertResult {
 pub struct AppState {
     pub registry: Arc<Registry>,
     pub active_cancels: Arc<Mutex<std::collections::HashMap<String, CancelToken>>>,
+}
+
+pub struct LanguageMenu {
+    pub toggle: tauri::menu::MenuItem<tauri::Wry>,
+    pub settings: tauri::menu::MenuItem<tauri::Wry>,
+    pub quit: tauri::menu::MenuItem<tauri::Wry>,
+}
+
+#[tauri::command]
+pub fn set_app_language(language: String, menu: tauri::State<'_, LanguageMenu>) -> Result<(), String> {
+    let (toggle, settings, quit) = match language.as_str() {
+        "vi" => ("Hiện / ẩn Vertex", "Cài đặt nâng cao…", "Thoát Vertex"),
+        "en" => ("Show / hide Vertex", "Advanced settings…", "Quit Vertex"),
+        _ => return Err("Unsupported language".into()),
+    };
+    menu.toggle.set_text(toggle).map_err(|e| e.to_string())?;
+    menu.settings.set_text(settings).map_err(|e| e.to_string())?;
+    menu.quit.set_text(quit).map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 #[tauri::command]
@@ -246,10 +263,7 @@ pub async fn convert_file(
 }
 
 #[tauri::command]
-pub async fn cancel_job(
-    job_id: String,
-    state: tauri::State<'_, AppState>,
-) -> Result<bool, String> {
+pub async fn cancel_job(job_id: String, state: tauri::State<'_, AppState>) -> Result<bool, String> {
     crate::drag_detector::set_is_converting(false);
     let mut map = state.active_cancels.lock().unwrap();
     if let Some(token) = map.remove(&job_id) {
@@ -263,14 +277,12 @@ pub async fn cancel_job(
 #[tauri::command]
 pub fn reveal_in_explorer(path: String) -> Result<(), String> {
     let p = Path::new(&path);
-    if !p.exists() {
-        return Err(format!("File does not exist: {}", path));
-    }
+    let safe_path = vertex_core::security::SafeLauncher::sanitize_explorer_path(p)?;
 
     #[cfg(target_os = "windows")]
     {
         let _ = std::process::Command::new("explorer")
-            .arg(format!("/select,{}", path))
+            .arg(format!("/select,{}", safe_path.display()))
             .spawn()
             .map_err(|e| e.to_string())?;
     }
@@ -279,14 +291,14 @@ pub fn reveal_in_explorer(path: String) -> Result<(), String> {
     {
         let _ = std::process::Command::new("open")
             .arg("-R")
-            .arg(&path)
+            .arg(&safe_path)
             .spawn()
             .map_err(|e| e.to_string())?;
     }
 
     #[cfg(target_os = "linux")]
     {
-        let parent = p.parent().unwrap_or(p);
+        let parent = safe_path.parent().unwrap_or(&safe_path);
         let _ = std::process::Command::new("xdg-open")
             .arg(parent)
             .spawn()

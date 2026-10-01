@@ -1,32 +1,93 @@
-# Rust and Cargo
+
+*.pem
+!Security/update-public-key.pem
+*-private.pem
+*.key
+*.pkcs8
+*.pfx
+*.p12
+*.cer
+*.crt
+*.der
+*.token
+credentials*
+secrets*
+
+# Environment and sensitive local configs
+.env
+.env.*
+.env*.local
+!.env.example
+
+# Windows Mark of the Web (Zone.Identifier streams)
+*:Zone.Identifier
+Zone.Identifier
+
+# ------------------------------------------------------------------------------
+# 2. COMPILED BINARIES & INSTALLER OUTPUTS
+# ------------------------------------------------------------------------------
+# Executables and installers
+*.exe
+*.msi
+*.dll
+*.dylib
+*.so
+installers/
+release/
+release_*/
+artifacts/
+
+# Generated release manifest and checksum sidecars (created during build)
+*.sha256
+*.manifest.json
+*.manifest.sig
+checksums.txt
+
+# Compressed packages
+*.zip
+*.tar.*
+*.7z
+*.rar
+
+# ------------------------------------------------------------------------------
+# 3. RUST & CARGO
+# ------------------------------------------------------------------------------
 target/
 **/target/
 debug/
 **/*.rs.bk
 *.pdb
+*.d
+Cargo.lock.bak
 
-# Frontend and Node
+# ------------------------------------------------------------------------------
+# 4. FRONTEND, NODE & SVELTE
+# ------------------------------------------------------------------------------
 node_modules/
 **/node_modules/
-frontend/dist/
 dist/
 dist-ssr/
-*.local
+frontend/dist/
 .svelte-kit/
+*.local
 
-# Logs
+# ------------------------------------------------------------------------------
+# 5. LOGS & DIAGNOSTICS
+# ------------------------------------------------------------------------------
 logs/
 *.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
+stderr.log
+stdout.log
+.sentry-native/
+crash-reports/
 
-# Environment and local configurations
-.env
-.env*.local
-
-# IDEs and Editors
+# ------------------------------------------------------------------------------
+# 6. IDES & EDITORS
+# ------------------------------------------------------------------------------
 .idea/
 .vscode/*
 !.vscode/extensions.json
@@ -36,15 +97,31 @@ pnpm-debug.log*
 *.njsproj
 *.sln
 *.sw?
+*.bak
+*.orig
+*.patch
+*.diff
 
-# Operating System files
+# AI assistants & workspace caches
+.agents/
+.gemini/
+.claude/
+.copilot/
+
+# ------------------------------------------------------------------------------
+# 7. OPERATING SYSTEM ARTIFACTS
+# ------------------------------------------------------------------------------
 .DS_Store
 Thumbs.db
 ehthumbs.db
 desktop.ini
+$RECYCLE.BIN/
 
-# Temporary files and test outputs
+# ------------------------------------------------------------------------------
+# 8. TEMPORARY FILES & TEST OUTPUTS
+# ------------------------------------------------------------------------------
 *.tmp
 *.temp
 temp/
 tmp/
+TestResults/

@@ -27,7 +27,12 @@ fn main() {
 
     // Also write icon.icns using 256x256 png
     let mut buf_256 = Vec::new();
-    img_256.write_to(&mut std::io::Cursor::new(&mut buf_256), image::ImageFormat::Png).unwrap();
+    img_256
+        .write_to(
+            &mut std::io::Cursor::new(&mut buf_256),
+            image::ImageFormat::Png,
+        )
+        .unwrap();
     fs::write(icons_dir.join("icon.icns"), &buf_256).unwrap();
 
     // Also copy to frontend/public for browser favicon

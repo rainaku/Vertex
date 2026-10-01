@@ -1,6 +1,9 @@
 <script lang="ts">
   import { onMount, onDestroy, tick } from 'svelte';
+  import { t, language, syncNativeLanguage } from './lib/i18n';
   import RadialWheel from './lib/RadialWheel.svelte';
+  import OptionsPanel from './lib/OptionsPanel.svelte';
+  import { defaultOptions, loadOptions } from './lib/settings';
   import {
     detectFile,
     getAvailableTargets,
@@ -44,12 +47,17 @@
   const PETALS_PER_PAGE = 7;
 
   // Options
-  let options: Options = {
-    quality: 85,
-    dpi: 200,
-    strip_metadata: true,
-    collision_policy: 'rename_with_suffix',
-  };
+  let options: Options = defaultOptions();
+  let settingsVisible = false;
+  let unlistenSettings: (() => void) | null = null;
+
+  async function openSettings() {
+    if (status === 'converting') return;
+    clearDragDwell();
+    isDragging = false;
+    settingsVisible = true;
+    await showWheel();
+  }
 
   let unlistenProgress: (() => void) | null = null;
   let unlistenDragDrop: (() => void) | null = null;
@@ -123,6 +131,7 @@
   }
 
   async function hideWheel() {
+    if (settingsVisible) return;
     if (wheelClosing) return;
     const revision = ++visibilityRevision;
     const generation = nativeGeneration;
@@ -193,7 +202,8 @@
   // ─── Conversion ──────────────────────────────────────────────────────────────
 
   async function startConversion(targetFmt: TargetFormatInfo, index: number) {
-    if (!currentFilePaths.length) return;
+    if (!currentFilePaths.length || settingsVisible || status === 'converting') return;
+    const conversionOptions = structuredClone(options);
 
     clearDragDwell();
     convertingIndex = index;
@@ -207,7 +217,7 @@
     const firstPath = currentFilePaths[0];
 
     try {
-      const res = await convertFile(jobId, firstPath, targetFmt.format, options);
+      const res = await convertFile(jobId, firstPath, targetFmt.format, conversionOptions);
       if (res.success) {
         status = 'done';
         progress = 1.0;
@@ -241,6 +251,7 @@
   // ─── Keyboard ────────────────────────────────────────────────────────────────
 
   function handleKeyDown(e: KeyboardEvent) {
+    if (settingsVisible) return;
     if (e.key === 'Escape') {
       hideWheel();
     }
@@ -249,6 +260,8 @@
   // ─── Lifecycle ───────────────────────────────────────────────────────────────
 
   onMount(async () => {
+    options = loadOptions();
+    void syncNativeLanguage($language).catch(error => console.warn('Language sync failed:', error));
     window.addEventListener('keydown', handleKeyDown);
 
     // Subscribe to conversion progress
@@ -267,6 +280,7 @@
         const { getCurrentWebview } = await import('@tauri-apps/api/webview');
         const { listen } = await import('@tauri-apps/api/event');
         const webview = getCurrentWebview();
+        unlistenSettings = await listen('open_advanced_settings', () => { void openSettings(); });
 
         unlistenWheelShown = await listen<{ generation: number; focus: boolean }>('wheel_shown', (event) => {
           nativeGeneration = event.payload.generation;
@@ -274,11 +288,13 @@
           if (event.payload.focus) void showWheel();
         });
         unlistenCloseRequested = await listen('wheel_close_requested', () => {
+          settingsVisible = false;
           void hideWheel();
         });
 
         // 1. Listen for global Shift+Drag events from Rust background thread
         unlistenDragStart = await listen('shift_drag_start', () => {
+          if (settingsVisible) return;
           isDragging = true;
         });
 
@@ -296,6 +312,7 @@
 
         // 2. Tauri webview drag-and-drop events (triggered when files hover over webview)
         unlistenDragDrop = await webview.onDragDropEvent(async (event) => {
+          if (settingsVisible) return;
           if (status === 'converting' || status === 'done') {
             clearDragDwell();
             return;
@@ -307,7 +324,7 @@
             const paths = event.payload.paths;
             isDragging = true;
             await handleFileLoaded(paths);
-            if (!isDragging || wheelClosing) return;
+            if (!isDragging || wheelClosing || settingsVisible) return;
             await showWheel();
           } else if (event.payload.type === 'over') {
             if (wheelClosing) return;
@@ -378,6 +395,7 @@
   });
 
   onDestroy(() => {
+    if (unlistenSettings) unlistenSettings();
     cancelClose();
     window.removeEventListener('keydown', handleKeyDown);
     if (unlistenProgress) unlistenProgress();
@@ -403,14 +421,14 @@
       {convertingIndex}
       {progress}
       {status}
-      sourceFormat={sourceFormatLabel}
+      sourceFormat={currentFilePaths.length > 1 ? `${$t("Tệp")} (${currentFilePaths.length})` : sourceFormatLabel}
       {hasMorePages}
       {page}
       {totalPages}
       onSelectFormat={(fmt) => startConversion(fmt, activeIndex)}
       onHoverChange={(idx) => activeIndex = idx}
       onNextPage={handleNextPage}
-      onCenterClick={() => {}}
+      onCenterClick={() => { void openSettings(); }}
     />
   </div>
 
@@ -418,11 +436,15 @@
   {#if isDragging && !wheelVisible}
     <div class="ctrl-hint">
       <span class="ctrl-key">Shift</span>
-      <span>+ thả để chuyển đổi</span>
+      <span>{$t("+ thả để chuyển đổi")}</span>
     </div>
   {/if}
 
 </main>
+
+{#if settingsVisible}
+  <OptionsPanel {options} onClose={() => settingsVisible = false} onSave={(value) => { options = value; settingsVisible = false; }} />
+{/if}
 
 <style>
   /* The entire window is a fully transparent passthrough overlay */

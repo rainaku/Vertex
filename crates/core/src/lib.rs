@@ -7,6 +7,7 @@ pub mod format;
 pub mod options;
 pub mod path_utils;
 pub mod registry;
+pub mod security;
 
 pub use cancel::CancelToken;
 pub use converter::{Availability, Converter};
@@ -16,3 +17,4 @@ pub use format::{Category, Format};
 pub use options::{CollisionPolicy, Options};
 pub use path_utils::resolve_target_path;
 pub use registry::Registry;
+pub use security::{AppIntegrityService, SafeLauncher, SensitiveDataScrubber};

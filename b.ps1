@@ -162,15 +162,75 @@ if (Test-Path $msiDir) {
 
 if ($foundInstallers.Count -gt 0) {
     Write-Host "`n>>> Danh sach file cai dat da tao:" -ForegroundColor Yellow
+    
+    # Lay phien ban tu tauri.conf.json hoac Cargo.toml
+    $tauriConfPath = Join-Path $WorkspaceRoot "crates\app\tauri.conf.json"
+    $appVersion = "0.1.0"
+    if (Test-Path $tauriConfPath) {
+        try {
+            $confJson = Get-Content $tauriConfPath -Raw | ConvertFrom-Json
+            if ($confJson.version) { $appVersion = $confJson.version }
+        } catch {}
+    }
+
     foreach ($file in $foundInstallers) {
         $sizeMb = [math]::Round($file.Length / 1MB, 2)
-        $sha256 = (Get-FileHash -Path $file.FullName -Algorithm SHA256).Hash
+        $sha256 = (Get-FileHash -Path $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
         
+        # Tao file .sha256 giong V-Notch
+        Set-Content -Path ($file.FullName + ".sha256") -Value "$sha256  $($file.Name)`n" -NoNewline
+
         Write-Host ""
         Write-Host "  [+] Ten file:  $($file.Name)" -ForegroundColor Cyan
         Write-Host "      Dung luong: $sizeMb MB ($($file.Length.ToString('N0')) bytes)" -ForegroundColor White
         Write-Host "      Duong dan:  $($file.FullName)" -ForegroundColor DarkGray
         Write-Host "      SHA-256:    $sha256" -ForegroundColor DarkGray
+        Write-Host "      Checksum:   $($file.FullName).sha256" -ForegroundColor DarkGray
+    }
+
+    # Tao checksum cho file binary goc neu co
+    $binExe = Join-Path $WorkspaceRoot "target\release\$AppName.exe"
+    if (Test-Path $binExe) {
+        $binHash = (Get-FileHash -Path $binExe -Algorithm SHA256).Hash.ToLowerInvariant()
+        Set-Content -Path ($binExe + ".sha256") -Value "$binHash  $AppName.exe`n" -NoNewline
+    }
+
+    # --- Ky ECDSA Release Manifest giong nhu V-Notch ---
+    $releaseKeysDir = Join-Path $env:LOCALAPPDATA "VertexReleaseKeys"
+    $foundKey = $null
+    if ($env:VERTEX_UPDATE_SIGNING_KEY_PEM_PATH -and (Test-Path $env:VERTEX_UPDATE_SIGNING_KEY_PEM_PATH)) {
+        $foundKey = $env:VERTEX_UPDATE_SIGNING_KEY_PEM_PATH
+    } elseif (Test-Path $releaseKeysDir) {
+        $keyFiles = Get-ChildItem -Path $releaseKeysDir -Filter "update-*-private.pem" | Sort-Object LastWriteTime -Descending
+        if ($keyFiles.Count -gt 0) {
+            $foundKey = $keyFiles[0].FullName
+        }
+    }
+
+    if ($foundKey -or $env:VERTEX_UPDATE_SIGNING_KEY_PEM) {
+        Write-Host "`n>>> [Ky xac thuc ban cap nhat ECDSA P-256]" -ForegroundColor Cyan
+        $signScript = Join-Path $WorkspaceRoot "scripts\Sign-UpdateManifest.ps1"
+        $pwshCmd = Get-Command "pwsh.exe" -ErrorAction SilentlyContinue
+
+        foreach ($file in $foundInstallers) {
+            try {
+                if ($PSVersionTable.PSVersion.Major -ge 7) {
+                    $signParams = @{
+                        InstallerPath = $file.FullName
+                        Version       = $appVersion
+                    }
+                    if ($foundKey) { $signParams["PrivateKeyPath"] = $foundKey }
+                    & $signScript @signParams
+                } elseif ($pwshCmd) {
+                    $keyArg = if ($foundKey) { "-PrivateKeyPath '$foundKey'" } else { "" }
+                    & $pwshCmd.Source -NoProfile -ExecutionPolicy Bypass -Command "& '$signScript' -InstallerPath '$($file.FullName)' -Version '$appVersion' $keyArg"
+                } else {
+                    Write-Host "    [!] Can PowerShell 7 (pwsh) de ky manifest." -ForegroundColor Yellow
+                }
+            } catch {
+                Write-Host "    [!] Canh bao ky manifest: $_" -ForegroundColor Yellow
+            }
+        }
     }
 
     # Chon file setup.exe chinh (uu tien file nsis .exe gan nhat)

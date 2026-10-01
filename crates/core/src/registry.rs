@@ -144,15 +144,20 @@ impl Registry {
                 let step_output = if is_last {
                     output_path.clone()
                 } else {
-                    temp_dir.join(format!("step_{}_{}.{}", idx, stem(input), step_to.extension()))
+                    temp_dir.join(format!(
+                        "step_{}_{}.{}",
+                        idx,
+                        stem(input),
+                        step_to.extension()
+                    ))
                 };
 
-                let conv = self
-                    .find_converter(*step_from, *step_to)
-                    .ok_or_else(|| VertexError::NoConversionRoute {
+                let conv = self.find_converter(*step_from, *step_to).ok_or_else(|| {
+                    VertexError::NoConversionRoute {
                         from: step_from.to_string(),
                         to: step_to.to_string(),
-                    })?;
+                    }
+                })?;
 
                 let step_start = idx as f32 / total_steps as f32;
                 let step_weight = 1.0 / total_steps as f32;

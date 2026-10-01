@@ -1,0 +1,59 @@
+name: CI
+
+'on':
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+    tags: ['v*']
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: windows-latest
+    steps:
+      # actions/checkout@v4.2.2 (pinned commit SHA for supply-chain security)
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      # dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      # actions/setup-node@v4.2.0 (pinned commit SHA)
+      - uses: actions/setup-node@1e60f620b9541d16bece96c5465dc8ee9832be0b
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Frontend Dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Verify Frontend Formatting & Types
+        working-directory: frontend
+        run: npm run check
+
+      - name: Verify Rust Formatting
+        run: cargo fmt --all -- --check
+
+      - name: Run Clippy Linter
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Run Rust Workspace Tests
+        run: cargo test --workspace
+
+      - name: Audit NPM Dependencies
+        working-directory: frontend
+        run: npm audit --audit-level=high
+
+      - name: Install cargo-audit & Audit Rust Crates
+        run: |
+          cargo install cargo-audit --locked
+          cargo audit

@@ -1,10 +1,11 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum CollisionPolicy {
     /// Append numeric suffix: "image (1).png", "image (2).png"
+    #[default]
     RenameWithSuffix,
     /// Return an error if file already exists
     FailIfExists,
@@ -12,15 +13,10 @@ pub enum CollisionPolicy {
     Overwrite,
 }
 
-impl Default for CollisionPolicy {
-    fn default() -> Self {
-        CollisionPolicy::RenameWithSuffix
-    }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct Options {
-    /// Encoding quality 1-100 (for JPG, WEBP, AVIF). Default 85.
+    /// Encoding quality 1-100 (for JPG and AVIF). WebP is lossless. Default 85.
     pub quality: u8,
     /// Rendering DPI for vector/PDF to raster. Default 200.
     pub dpi: u32,
@@ -34,6 +30,12 @@ pub struct Options {
     pub output_dir: Option<PathBuf>,
     /// Naming collision policy.
     pub collision_policy: CollisionPolicy,
+    /// RGB matte used when exporting to JPEG, which cannot store alpha.
+    pub jpeg_background: [u8; 3],
+    /// Pixels below this alpha value become transparent in GIF.
+    pub gif_alpha_threshold: u8,
+    /// AVIF encoding speed, 1 (slowest) through 10 (fastest).
+    pub avif_speed: u8,
 }
 
 impl Default for Options {
@@ -46,6 +48,9 @@ impl Default for Options {
             strip_metadata: true,
             output_dir: None,
             collision_policy: CollisionPolicy::default(),
+            jpeg_background: [255, 255, 255],
+            gif_alpha_threshold: 128,
+            avif_speed: 6,
         }
     }
 }

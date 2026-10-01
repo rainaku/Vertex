@@ -41,4 +41,7 @@ export interface Options {
   strip_metadata: boolean;
   output_dir?: string;
   collision_policy: 'rename_with_suffix' | 'fail_if_exists' | 'overwrite';
+  jpeg_background?: [number, number, number];
+  gif_alpha_threshold?: number;
+  avif_speed?: number;
 }

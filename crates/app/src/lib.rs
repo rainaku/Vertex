@@ -1,12 +1,13 @@
 pub mod commands;
 pub mod drag_detector;
 mod wheel_window;
+mod logging;
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 use tracing::info;
 use vertex_core::Registry;
 
@@ -14,7 +15,10 @@ use commands::*;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tracing_subscriber::fmt::init();
+    tracing_subscriber::fmt()
+        .with_ansi(false)
+        .with_writer(logging::RedactedWriter::default)
+        .init();
     info!("Initializing Vertex application");
 
     let state = AppState {
@@ -40,31 +44,46 @@ pub fn run() {
             set_window_passthrough,
             set_converting_state,
             get_cursor_pos,
+            set_app_language,
         ])
         .setup(|app| {
             // Build Tray Menu
-            let toggle_i = MenuItem::with_id(app, "toggle", "Hiện / Ẩn Vertex", true, None::<&str>)?;
+            let toggle_i =
+                MenuItem::with_id(app, "toggle", "Hiện / Ẩn Vertex", true, None::<&str>)?;
             let quit_i = MenuItem::with_id(app, "quit", "Thoát Vertex", true, None::<&str>)?;
-            let tray_menu = Menu::with_items(app, &[&toggle_i, &quit_i])?;
+            let settings_i =
+                MenuItem::with_id(app, "settings", "Cài đặt nâng cao…", true, None::<&str>)?;
+            let tray_menu = Menu::with_items(app, &[&toggle_i, &settings_i, &quit_i])?;
+            app.manage(LanguageMenu { toggle: toggle_i, settings: settings_i, quit: quit_i });
 
             let _tray = TrayIconBuilder::new()
                 .menu(&tray_menu)
                 .show_menu_on_left_click(false)
                 .tooltip("Vertex - File Converter Wheel")
-                .on_menu_event(|app, event| {
-                    match event.id().as_ref() {
-                        "toggle" => {
-                            if let Some(win) = app.get_webview_window("main") {
-                                if let Err(error) = wheel_window::toggle(&win) {
-                                    tracing::warn!(%error, "Could not toggle wheel from tray menu");
-                                }
+                .on_menu_event(|app, event| match event.id().as_ref() {
+                    "toggle" => {
+                        if let Some(win) = app.get_webview_window("main") {
+                            if let Err(error) = wheel_window::toggle(&win) {
+                                tracing::warn!(%error, "Could not toggle wheel from tray menu");
                             }
                         }
-                        "quit" => {
-                            app.exit(0);
-                        }
-                        _ => {}
                     }
+                    "settings" => {
+                        if let Some(win) = app.get_webview_window("main") {
+                            if let Err(error) =
+                                wheel_window::show(&win, None, true).and_then(|_| {
+                                    win.emit("open_advanced_settings", ())
+                                        .map_err(|e| e.to_string())
+                                })
+                            {
+                                tracing::warn!(%error, "Could not open advanced settings");
+                            }
+                        }
+                    }
+                    "quit" => {
+                        app.exit(0);
+                    }
+                    _ => {}
                 })
                 .on_tray_icon_event(|tray, event| {
                     if let TrayIconEvent::Click {
@@ -96,6 +115,24 @@ pub fn run() {
 
             // Start global Ctrl+Drag watcher thread
             drag_detector::start_drag_detector(app.handle().clone());
+
+            // Start background integrity check (Mark of the Web origin check)
+            tauri::async_runtime::spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                if vertex_core::security::AppIntegrityService::is_dev_or_test_environment() {
+                    return;
+                }
+
+                if let Ok(exe_path) = std::env::current_exe() {
+                    let (is_trusted, _) =
+                        vertex_core::security::AppIntegrityService::check_download_origin(
+                            &exe_path,
+                        );
+                    if !is_trusted {
+                        tracing::warn!("Application was downloaded from an untrusted origin");
+                    }
+                }
+            });
 
             Ok(())
         })

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from './i18n';
   import { createPetalPath, getPetalCenter, hitTest } from './geometry';
   import type { TargetFormatInfo } from './types';
 
@@ -101,7 +102,7 @@
 <div
   class="wheel-container"
   role="region"
-  aria-label="Vertex Radial Wheel File Converter"
+  aria-label={$t("Vertex – Chuyển đổi tệp")}
   on:pointermove={handlePointerMove}
   on:pointerleave={handlePointerLeave}
 >
@@ -253,7 +254,7 @@
       class="center-hub"
       role="button"
       tabindex={0}
-      aria-label="Chọn file nguồn"
+      aria-label={$t("Mở cài đặt nâng cao")}
       on:click={onCenterClick}
       on:keydown={(e) => (e.key === 'Enter' || e.key === ' ') && onCenterClick()}
     />
@@ -265,7 +266,7 @@
       transform="translate({CX}, {CY})"
       role="button"
       tabindex={0}
-      aria-label="Tâm vòng xoay Vertex"
+      aria-label={$t("Mở cài đặt nâng cao")}
       on:click={onCenterClick}
       on:keydown={(e) => (e.key === 'Enter' || e.key === ' ') && onCenterClick()}
     >
@@ -285,15 +286,15 @@
         {#if status === 'converting'}
           {Math.round(progress * 100)}%
         {:else if status === 'done'}
-          ✓ XONG
+          ✓ {$t("Xong")}
         {:else if activeFormat}
           <tspan x="0" y="-3" font-size="13" font-weight="800">{activeFormat.label}</tspan>
           <tspan x="0" y="11" font-size="8.5" font-weight="700" letter-spacing="1px" opacity="0.65">
-            {activeFormat.category ? activeFormat.category.toUpperCase() : 'FORMAT'}
+            {$t(activeFormat.category === 'image' ? 'Ảnh' : activeFormat.category === 'audio' ? 'Âm thanh' : activeFormat.category === 'video' ? 'Video' : activeFormat.category === 'document' ? 'Tài liệu' : 'Định dạng')}
           </tspan>
         {:else if activeIndex === 7 && hasMorePages}
-          <tspan x="0" y="-3" font-size="12" font-weight="800">TRANG {(page + 1) % totalPages + 1}/{totalPages}</tspan>
-          <tspan x="0" y="11" font-size="8.5" font-weight="700" letter-spacing="1px" opacity="0.65">CHUYỂN TRANG</tspan>
+          <tspan x="0" y="-3" font-size="12" font-weight="800">{$t("Trang")} {(page + 1) % totalPages + 1}/{totalPages}</tspan>
+          <tspan x="0" y="11" font-size="8.5" font-weight="700" letter-spacing="1px" opacity="0.65">{$t("Trang tiếp")}</tspan>
         {:else if sourceFormat}
           {sourceFormat}
         {:else}
@@ -323,7 +324,7 @@
     <div class="tooltip-container">
       <div class="tooltip-glass">
         <span class="tooltip-icon">⚠️</span>
-        <span>{activeFormat.reason}</span>
+        <span>{$t(activeFormat.reason.toLowerCase().includes("ffmpeg") ? "Cần cài FFmpeg để dùng định dạng này." : "Định dạng này chưa dùng được.")}</span>
       </div>
     </div>
   {/if}

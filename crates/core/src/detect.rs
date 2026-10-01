@@ -51,10 +51,10 @@ pub fn detect_format<P: AsRef<Path>>(path: P) -> Result<Format> {
         if trimmed.starts_with("<!DOCTYPE html") || trimmed.starts_with("<html") {
             return Ok(Format::Html);
         }
-        if trimmed.starts_with('{') || trimmed.starts_with('[') {
-            if serde_json::from_str::<serde_json::Value>(trimmed).is_ok() {
-                return Ok(Format::Json);
-            }
+        if (trimmed.starts_with('{') || trimmed.starts_with('['))
+            && serde_json::from_str::<serde_json::Value>(trimmed).is_ok()
+        {
+            return Ok(Format::Json);
         }
     }
 

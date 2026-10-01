@@ -1,3 +1,4 @@
+import { translate } from './i18n';
 import type {
   FormatInfo,
   TargetFormatInfo,
@@ -181,7 +182,7 @@ export async function pickFile(): Promise<string | null> {
     multiple: false,
     filters: [
       {
-        name: 'Supported Files',
+        name: translate('Tệp được hỗ trợ'),
         extensions: [
           'png', 'jpg', 'jpeg', 'webp', 'avif', 'bmp', 'ico', 'tiff', 'gif',
           'pdf', 'docx', 'txt', 'md', 'html', 'csv', 'json', 'xlsx'

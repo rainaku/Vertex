@@ -45,7 +45,8 @@ pub fn start_drag_detector(app: AppHandle) {
                 thread::sleep(Duration::from_millis(15));
 
                 // 1. Check ESC key to cancel immediately
-                let esc_pressed = unsafe { (GetAsyncKeyState(VK_ESCAPE as i32) as u16 & 0x8000) != 0 };
+                let esc_pressed =
+                    unsafe { (GetAsyncKeyState(VK_ESCAPE as i32) as u16 & 0x8000) != 0 };
                 if esc_pressed {
                     if state != DragState::Idle {
                         state = DragState::Idle;
@@ -62,8 +63,10 @@ pub fn start_drag_detector(app: AppHandle) {
                 }
 
                 // 2. Check Shift key and Left Mouse Button
-                let shift_down = unsafe { (GetAsyncKeyState(VK_SHIFT as i32) as u16 & 0x8000) != 0 };
-                let lbutton_down = unsafe { (GetAsyncKeyState(VK_LBUTTON as i32) as u16 & 0x8000) != 0 };
+                let shift_down =
+                    unsafe { (GetAsyncKeyState(VK_SHIFT as i32) as u16 & 0x8000) != 0 };
+                let lbutton_down =
+                    unsafe { (GetAsyncKeyState(VK_LBUTTON as i32) as u16 & 0x8000) != 0 };
 
                 let mut pt = POINT { x: 0, y: 0 };
                 unsafe { GetCursorPos(&mut pt) };
@@ -93,7 +96,9 @@ pub fn start_drag_detector(app: AppHandle) {
                                 info!("Shift+Drag detected at ({}, {})! Positioning Vertex overlay...", pt.x, pt.y);
 
                                 if let Some(win) = app.get_webview_window("main") {
-                                    let size = win.outer_size().unwrap_or(tauri::PhysicalSize::new(480, 480));
+                                    let size = win
+                                        .outer_size()
+                                        .unwrap_or(tauri::PhysicalSize::new(480, 480));
                                     let w = size.width as i32;
                                     let h = size.height as i32;
 

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from './i18n';
   import { CheckCircle2, FolderOpen, X } from 'lucide-svelte';
   import { revealInExplorer } from './tauri-bridge';
 
@@ -21,15 +22,15 @@
         <CheckCircle2 size={20} />
       </div>
       <div class="toast-content">
-        <div class="toast-title">Chuyển đổi hoàn tất</div>
+        <div class="toast-title">{$t("Chuyển đổi hoàn tất")}</div>
         <div class="toast-desc">{message}</div>
       </div>
       <div class="toast-actions">
-        <button class="btn-reveal" on:click={handleReveal} title="Mở thư mục chứa file">
+        <button class="btn-reveal" on:click={handleReveal} title={$t("Mở thư mục chứa file")}>
           <FolderOpen size={16} />
-          <span>Explorer</span>
+          <span>{$t("Mở thư mục")}</span>
         </button>
-        <button class="btn-close" on:click={onClose} aria-label="Đóng thông báo">
+        <button class="btn-close" on:click={onClose} aria-label={$t("Đóng thông báo")}>
           <X size={16} />
         </button>
       </div>

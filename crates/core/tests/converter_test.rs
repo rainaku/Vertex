@@ -13,14 +13,13 @@ fn test_image_roundtrip_conversion() {
     let input_path = dir.path().join("sample.png");
 
     // Create a 64x64 test image with pure red and green pixels
-    let img: ImageBuffer<Rgba<u8>, Vec<u8>> =
-        ImageBuffer::from_fn(64, 64, |x, y| {
-            if (x + y) % 2 == 0 {
-                Rgba([255, 60, 20, 255])
-            } else {
-                Rgba([20, 200, 80, 255])
-            }
-        });
+    let img: ImageBuffer<Rgba<u8>, Vec<u8>> = ImageBuffer::from_fn(64, 64, |x, y| {
+        if (x + y) % 2 == 0 {
+            Rgba([255, 60, 20, 255])
+        } else {
+            Rgba([20, 200, 80, 255])
+        }
+    });
 
     let f = File::create(&input_path).unwrap();
     img.write_to(&mut BufWriter::new(f), image::ImageFormat::Png)
@@ -117,9 +116,18 @@ fn test_audio_and_video_targets() {
     assert!(video_target_fmts.contains(&Format::Wav));
 
     // Verify video formats come FIRST before audio extraction targets
-    assert_eq!(video_target_fmts[0].category(), vertex_core::Category::Video);
-    assert_eq!(video_target_fmts[1].category(), vertex_core::Category::Video);
-    assert_eq!(video_target_fmts[2].category(), vertex_core::Category::Video);
+    assert_eq!(
+        video_target_fmts[0].category(),
+        vertex_core::Category::Video
+    );
+    assert_eq!(
+        video_target_fmts[1].category(),
+        vertex_core::Category::Video
+    );
+    assert_eq!(
+        video_target_fmts[2].category(),
+        vertex_core::Category::Video
+    );
 }
 
 #[test]
@@ -141,17 +149,18 @@ fn test_ffmpeg_audio_conversion() {
     // fmt chunk
     wav_bytes.extend_from_slice(b"fmt ");
     wav_bytes.extend_from_slice(&16u32.to_le_bytes()); // subchunk size
-    wav_bytes.extend_from_slice(&1u16.to_le_bytes());  // PCM
-    wav_bytes.extend_from_slice(&1u16.to_le_bytes());  // mono
+    wav_bytes.extend_from_slice(&1u16.to_le_bytes()); // PCM
+    wav_bytes.extend_from_slice(&1u16.to_le_bytes()); // mono
     wav_bytes.extend_from_slice(&sample_rate.to_le_bytes());
     wav_bytes.extend_from_slice(&(sample_rate * 2).to_le_bytes()); // byte rate
-    wav_bytes.extend_from_slice(&2u16.to_le_bytes());  // block align
+    wav_bytes.extend_from_slice(&2u16.to_le_bytes()); // block align
     wav_bytes.extend_from_slice(&16u16.to_le_bytes()); // bits per sample
-    // data chunk
+                                                       // data chunk
     wav_bytes.extend_from_slice(b"data");
     wav_bytes.extend_from_slice(&(num_samples * 2).to_le_bytes());
     for i in 0..num_samples {
-        let sample = (f32::sin(i as f32 * 440.0 * 2.0 * std::f32::consts::PI / sample_rate as f32) * 16000.0) as i16;
+        let sample = (f32::sin(i as f32 * 440.0 * 2.0 * std::f32::consts::PI / sample_rate as f32)
+            * 16000.0) as i16;
         wav_bytes.extend_from_slice(&sample.to_le_bytes());
     }
     std::fs::write(&input_wav, &wav_bytes).expect("write wav");
@@ -168,16 +177,28 @@ fn test_ffmpeg_audio_conversion() {
 
     // Convert WAV -> MP3
     let out_mp3 = registry
-        .convert(&input_wav, Format::Mp3, &opts, &move |p| {
-            if p > 0.0 {
-                progress_clone.store(true, Ordering::SeqCst);
-            }
-        }, &cancel)
+        .convert(
+            &input_wav,
+            Format::Mp3,
+            &opts,
+            &move |p| {
+                if p > 0.0 {
+                    progress_clone.store(true, Ordering::SeqCst);
+                }
+            },
+            &cancel,
+        )
         .expect("convert wav to mp3");
 
     assert!(out_mp3.exists(), "MP3 output must exist");
-    assert!(out_mp3.metadata().unwrap().len() > 100, "MP3 output must not be empty");
-    assert!(progress_called.load(Ordering::SeqCst), "Progress callback must be invoked");
+    assert!(
+        out_mp3.metadata().unwrap().len() > 100,
+        "MP3 output must not be empty"
+    );
+    assert!(
+        progress_called.load(Ordering::SeqCst),
+        "Progress callback must be invoked"
+    );
 }
 
 #[test]
@@ -197,10 +218,20 @@ fn test_ffmpeg_video_conversion_and_audio_extraction() {
     // Generate a minimal 1-second synthetic MP4 clip with video test pattern and audio sine wave
     let mut make_cmd = std::process::Command::new(&ffmpeg_bin);
     make_cmd.args([
-        "-f", "lavfi", "-i", "testsrc=duration=1:size=160x120:rate=15",
-        "-f", "lavfi", "-i", "sine=frequency=440:duration=1",
-        "-c:v", "libx264", "-preset", "ultrafast",
-        "-c:a", "aac",
+        "-f",
+        "lavfi",
+        "-i",
+        "testsrc=duration=1:size=160x120:rate=15",
+        "-f",
+        "lavfi",
+        "-i",
+        "sine=frequency=440:duration=1",
+        "-c:v",
+        "libx264",
+        "-preset",
+        "ultrafast",
+        "-c:a",
+        "aac",
         "-y",
     ]);
     make_cmd.arg(&input_mp4);
@@ -210,7 +241,11 @@ fn test_ffmpeg_video_conversion_and_audio_extraction() {
         make_cmd.creation_flags(0x08000000);
     }
     let res = make_cmd.output().expect("generate synthetic mp4");
-    assert!(res.status.success(), "Failed to generate test mp4: {}", String::from_utf8_lossy(&res.stderr));
+    assert!(
+        res.status.success(),
+        "Failed to generate test mp4: {}",
+        String::from_utf8_lossy(&res.stderr)
+    );
 
     let detected = detect_format(&input_mp4).expect("detect mp4");
     assert_eq!(detected, Format::Mp4);
@@ -223,37 +258,64 @@ fn test_ffmpeg_video_conversion_and_audio_extraction() {
     let progress_mp3 = Arc::new(AtomicBool::new(false));
     let progress_mp3_clone = progress_mp3.clone();
     let out_mp3 = registry
-        .convert(&input_mp4, Format::Mp3, &opts, &move |p| {
-            if p > 0.0 {
-                progress_mp3_clone.store(true, Ordering::SeqCst);
-            }
-        }, &cancel)
+        .convert(
+            &input_mp4,
+            Format::Mp3,
+            &opts,
+            &move |p| {
+                if p > 0.0 {
+                    progress_mp3_clone.store(true, Ordering::SeqCst);
+                }
+            },
+            &cancel,
+        )
         .expect("extract audio from mp4 to mp3");
 
     assert!(out_mp3.exists(), "Extracted MP3 must exist");
-    assert!(out_mp3.metadata().unwrap().len() > 100, "Extracted MP3 must not be empty");
-    assert!(progress_mp3.load(Ordering::SeqCst), "Progress callback must be invoked for extraction");
+    assert!(
+        out_mp3.metadata().unwrap().len() > 100,
+        "Extracted MP3 must not be empty"
+    );
+    assert!(
+        progress_mp3.load(Ordering::SeqCst),
+        "Progress callback must be invoked for extraction"
+    );
 
     // 2. Video Conversion: MP4 -> WEBM
     let progress_webm = Arc::new(AtomicBool::new(false));
     let progress_webm_clone = progress_webm.clone();
     let out_webm = registry
-        .convert(&input_mp4, Format::Webm, &opts, &move |p| {
-            if p > 0.0 {
-                progress_webm_clone.store(true, Ordering::SeqCst);
-            }
-        }, &cancel)
+        .convert(
+            &input_mp4,
+            Format::Webm,
+            &opts,
+            &move |p| {
+                if p > 0.0 {
+                    progress_webm_clone.store(true, Ordering::SeqCst);
+                }
+            },
+            &cancel,
+        )
         .expect("convert mp4 to webm");
 
     assert!(out_webm.exists(), "Converted WEBM must exist");
-    assert!(out_webm.metadata().unwrap().len() > 100, "Converted WEBM must not be empty");
-    assert!(progress_webm.load(Ordering::SeqCst), "Progress callback must be invoked for video transcode");
+    assert!(
+        out_webm.metadata().unwrap().len() > 100,
+        "Converted WEBM must not be empty"
+    );
+    assert!(
+        progress_webm.load(Ordering::SeqCst),
+        "Progress callback must be invoked for video transcode"
+    );
 
     // 3. MP4 -> MP4 compression / re-encoding
     let out_mp4_compressed = registry
         .convert(&input_mp4, Format::Mp4, &opts, &|_| {}, &cancel)
         .expect("compress mp4 to mp4");
     assert!(out_mp4_compressed.exists(), "Compressed MP4 must exist");
-    assert_ne!(out_mp4_compressed, input_mp4, "Compressed output must not overwrite input path");
+    assert_ne!(
+        out_mp4_compressed, input_mp4,
+        "Compressed output must not overwrite input path"
+    );
     assert!(out_mp4_compressed.metadata().unwrap().len() > 100);
 }

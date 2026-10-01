@@ -312,11 +312,7 @@ impl Converter for FfmpegConverter {
         .ok_or_else(|| VertexError::UnrecognizedFormat(output.to_path_buf()))?;
 
         // Build command args for MAXIMUM PERFORMANCE
-        let mut args: Vec<String> = vec![
-            "-nostdin".into(),
-            "-y".into(),
-            "-hide_banner".into(),
-        ];
+        let mut args: Vec<String> = vec!["-nostdin".into(), "-y".into(), "-hide_banner".into()];
 
         // Hardware acceleration for video inputs (auto-negotiates NVDEC/D3D11VA/DXVA2/QSV)
         if matches!(from_format.category(), Category::Video) || from_format == Format::Gif {
@@ -422,9 +418,10 @@ impl Converter for FfmpegConverter {
             source: e,
         })?;
 
-        let stdout = child.stdout.take().ok_or_else(|| {
-            VertexError::Internal("Failed to capture FFmpeg stdout".to_string())
-        })?;
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| VertexError::Internal("Failed to capture FFmpeg stdout".to_string()))?;
 
         let mut reader = BufReader::new(stdout);
         let mut line = String::new();
@@ -459,10 +456,8 @@ impl Converter for FfmpegConverter {
                                     }
                                 }
                             }
-                            "progress" => {
-                                if v == "end" {
-                                    progress(0.99);
-                                }
+                            "progress" if v == "end" => {
+                                progress(0.99);
                             }
                             _ => {}
                         }
@@ -505,7 +500,12 @@ impl Converter for FfmpegConverter {
 fn append_audio_codec_args(args: &mut Vec<String>, target: Format) {
     match target {
         Format::Mp3 => {
-            args.extend(["-c:a".into(), "libmp3lame".into(), "-q:a".into(), "2".into()]);
+            args.extend([
+                "-c:a".into(),
+                "libmp3lame".into(),
+                "-q:a".into(),
+                "2".into(),
+            ]);
         }
         Format::Wav => {
             args.extend(["-c:a".into(), "pcm_s16le".into()]);
@@ -525,7 +525,12 @@ fn append_audio_codec_args(args: &mut Vec<String>, target: Format) {
             args.extend(["-c:a".into(), "libvorbis".into(), "-q:a".into(), "6".into()]);
         }
         Format::Opus => {
-            args.extend(["-c:a".into(), "libopus".into(), "-b:a".into(), "128k".into()]);
+            args.extend([
+                "-c:a".into(),
+                "libopus".into(),
+                "-b:a".into(),
+                "128k".into(),
+            ]);
         }
         Format::Aiff => {
             args.extend(["-c:a".into(), "pcm_s16be".into()]);
@@ -534,7 +539,12 @@ fn append_audio_codec_args(args: &mut Vec<String>, target: Format) {
             args.extend(["-c:a".into(), "wmav2".into(), "-b:a".into(), "192k".into()]);
         }
         _ => {
-            args.extend(["-c:a".into(), "libmp3lame".into(), "-q:a".into(), "2".into()]);
+            args.extend([
+                "-c:a".into(),
+                "libmp3lame".into(),
+                "-q:a".into(),
+                "2".into(),
+            ]);
         }
     }
 }
@@ -547,15 +557,9 @@ fn append_video_codec_args(args: &mut Vec<String>, target: Format, opts: &Option
             format!("scale=w={}:h={}:force_original_aspect_ratio=decrease", w, h),
         ]);
     } else if let Some(w) = opts.max_width {
-        args.extend([
-            "-vf".into(),
-            format!("scale='min({},iw)':-2", w),
-        ]);
+        args.extend(["-vf".into(), format!("scale='min({},iw)':-2", w)]);
     } else if let Some(h) = opts.max_height {
-        args.extend([
-            "-vf".into(),
-            format!("scale=-2:'min({},ih)'", h),
-        ]);
+        args.extend(["-vf".into(), format!("scale=-2:'min({},ih)'", h)]);
     }
 
     match target {

@@ -4980,12 +4980,15 @@ dependencies = [
  "infer 0.16.0",
  "mime_guess",
  "ravif",
+ "regex",
  "rgb",
  "serde",
  "serde_json",
+ "sha2",
  "tempfile",
  "thiserror 2.0.21",
  "tracing",
+ "url",
 ]
 
 [[package]]
