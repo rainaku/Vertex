@@ -32,6 +32,8 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             detect_file,
             get_available_targets,
@@ -140,6 +142,53 @@ pub fn run() {
                     if !is_trusted {
                         tracing::warn!("Application was downloaded from an untrusted origin");
                     }
+                }
+            });
+
+            // Start background auto-updater check
+            let update_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                // Wait 15 seconds after app startup
+                tokio::time::sleep(std::time::Duration::from_secs(15)).await;
+                loop {
+                    use tauri_plugin_updater::UpdaterExt;
+                    match update_handle.updater() {
+                        Ok(updater) => {
+                            match updater.check().await {
+                                Ok(Some(update)) => {
+                                    let version = update.version.clone();
+                                    let notes = update.body.clone().unwrap_or_default();
+                                    tracing::info!(%version, "New Vertex version available");
+
+                                    // Trigger desktop notification
+                                    use tauri_plugin_notification::NotificationExt;
+                                    let _ = update_handle
+                                        .notification()
+                                        .builder()
+                                        .title("Vertex")
+                                        .body(format!("Đã có phiên bản mới v{}! Nhấn vào Cài đặt để cập nhật.", version))
+                                        .show();
+
+                                    // Notify frontend
+                                    let _ = update_handle.emit("update_available", serde_json::json!({
+                                        "version": version,
+                                        "notes": notes,
+                                    }));
+                                }
+                                Ok(None) => {
+                                    tracing::debug!("Vertex is running latest version");
+                                }
+                                Err(err) => {
+                                    tracing::debug!(%err, "Background update check skipped/failed");
+                                }
+                            }
+                        }
+                        Err(err) => {
+                            tracing::debug!(%err, "Updater extension not ready");
+                        }
+                    }
+                    // Recheck every 6 hours
+                    tokio::time::sleep(std::time::Duration::from_secs(6 * 3600)).await;
                 }
             });
 

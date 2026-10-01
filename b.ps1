@@ -9,6 +9,8 @@ param(
     [switch]$Msi,
     # Build ca hai goi NSIS setup exe va MSI
     [switch]$All,
+    # Thu gom tat ca file release vao thu muc release/<version>/ de phat hanh
+    [switch]$Collect,
     # Bat che do log chi tiet (verbose)
     [switch]$VerboseLog
 )
@@ -118,6 +120,14 @@ if ($VerboseLog) {
 
 # Kiem tra uu tien cargo-tauri neu co, nguoc lai dung npx trong frontend
 $cargoTauri = Get-Command "cargo-tauri" -ErrorAction SilentlyContinue
+
+# Nap khoa ky Tauri updater tu VertexReleaseKeys neu co
+$tauriKeyFile = Join-Path $env:LOCALAPPDATA "VertexReleaseKeys\tauri-key"
+if (Test-Path $tauriKeyFile) {
+    $env:TAURI_SIGNING_PRIVATE_KEY = (Get-Content $tauriKeyFile -Raw).Trim()
+    $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = ""
+    Write-Host "    [+] Da nap khoa ky updater tu: $tauriKeyFile" -ForegroundColor Green
+}
 
 $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
 
@@ -239,20 +249,83 @@ if ($foundInstallers.Count -gt 0) {
         $primaryExe = $foundInstallers[0]
     }
 
+    # --- Thu gom file release vao 1 folder gon gàng ---
+    $releaseOutDir = Join-Path $WorkspaceRoot "release\v$appVersion"
+    New-Item -ItemType Directory -Path $releaseOutDir -Force | Out-Null
+    Write-Host "`n>>> [+] Thu gom file release vao: release\v$appVersion\" -ForegroundColor Cyan
+
+    # Cac pattern can copy: installer + sha256 + manifest.json + manifest.sig + latest.json + updater zip/sig
+    $collectPatterns = @("*.exe", "*.msi", "*.sha256", "*.manifest.json", "*.manifest.sig", "latest.json", "*.sig", "*.zip", "*.tar.gz")
+    $copiedFiles = @()
+
+    foreach ($dir in @($BundleDir, $nsisDir, $msiDir)) {
+        if (-not (Test-Path $dir)) { continue }
+        foreach ($pattern in $collectPatterns) {
+            Get-ChildItem -Path $dir -Filter $pattern -File -ErrorAction SilentlyContinue | ForEach-Object {
+                $dest = Join-Path $releaseOutDir $_.Name
+                Copy-Item -Path $_.FullName -Destination $dest -Force
+                if ($copiedFiles -notcontains $_.Name) {
+                    $copiedFiles += $_.Name
+                }
+            }
+        }
+    }
+
+    # Kiem tra va dam bao latest.json dung chuan de phuc vu auto-updater
+    $outLatestJson = Join-Path $releaseOutDir "latest.json"
+    $sigFile = Get-ChildItem -Path $releaseOutDir | Where-Object { $_.Name -like "*.exe.sig" -or $_.Name -like "*.zip.sig" } | Select-Object -First 1
+    $zipOrExe = Get-ChildItem -Path $releaseOutDir -Filter "*.zip" | Select-Object -First 1
+    if (-not $zipOrExe) {
+        $zipOrExe = $primaryExe
+    }
+
+    if ($sigFile -and $zipOrExe) {
+        try {
+            $sigContent = (Get-Content $sigFile.FullName -Raw).Trim()
+            $manifestObj = [ordered]@{
+                "version"   = $appVersion
+                "notes"     = "Vertex Release v$appVersion"
+                "pub_date"  = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+                "platforms" = [ordered]@{
+                    "windows-x86_64" = [ordered]@{
+                        "signature" = $sigContent
+                        "url"       = "https://github.com/rainaku/Vertex/releases/download/v$appVersion/$($zipOrExe.Name)"
+                    }
+                }
+            }
+            $manifestObj | ConvertTo-Json -Depth 5 | Set-Content $outLatestJson -Encoding UTF8
+            if ($copiedFiles -notcontains "latest.json") {
+                $copiedFiles += "latest.json"
+            }
+        } catch {}
+    }
+
+    if ($copiedFiles.Count -gt 0) {
+        foreach ($cFile in $copiedFiles) {
+            Write-Host "    [+] $cFile" -ForegroundColor Green
+        }
+    }
+
+    Write-Host "`n>>> [Cach phat hanh GitHub Release]:" -ForegroundColor Yellow
+    Write-Host "    1. Truy cap: https://github.com/rainaku/Vertex/releases/new" -ForegroundColor White
+    Write-Host "    2. Dat Tag: v$appVersion" -ForegroundColor White
+    Write-Host "    3. Keo tha toan bo file trong 'release\v$appVersion\' vao phan Attach binaries" -ForegroundColor White
+    Write-Host "    4. Nhan 'Publish release' -> Cac may cai Vertex se tu dong nhan ban cap nhat!" -ForegroundColor Green
+
     # Mo thu muc / Chon file trong Explorer neu co tham so -Open
     if ($Open) {
         Write-Host "`n>>> Dang mo Explorer va chon file setup..." -ForegroundColor Cyan
         explorer.exe /select, "$($primaryExe.FullName)"
     } else {
-        Write-Host "`n[Goi y] Ban co the dung: .\b.ps1 -Open  (De tu dong mo thu muc chua file setup)" -ForegroundColor DarkGray
+        Write-Host "`n[Goi y] Ban co the dung: .\b.ps1 -Open     (De tu dong mo thu muc chua file setup)" -ForegroundColor DarkGray
+        Write-Host "[Goi y] Ban co the dung: .\b.ps1 -Run      (De tu dong chay thu bo cai dat sau khi build)" -ForegroundColor DarkGray
+        Write-Host "[Goi y] Thu muc release:         .\release\v$appVersion\" -ForegroundColor DarkGray
     }
 
     # Khoi chay installer neu co tham so -Run
     if ($Run) {
         Write-Host ">>> Dang khoi chay bo cai dat: $($primaryExe.Name)..." -ForegroundColor Green
         Start-Process -FilePath $primaryExe.FullName
-    } else {
-        Write-Host "[Goi y] Ban co the dung: .\b.ps1 -Run   (De tu dong chay thu bo cai dat sau khi build)" -ForegroundColor DarkGray
     }
 } else {
     Write-Host "[?] Khong tim thay file installer trong thu muc: $BundleDir" -ForegroundColor Yellow

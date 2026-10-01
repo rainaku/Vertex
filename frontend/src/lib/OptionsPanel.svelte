@@ -4,6 +4,7 @@
   import type { Options } from './types';
   import { defaultOptions, normalizeOptions, SETTINGS_KEY } from './settings';
   import { isTauri } from './tauri-bridge';
+  import { updateStore, checkForUpdates, installUpdate, openReleasePage } from './updater';
   import ElasticSlider from './ElasticSlider.svelte';
   import { gsap } from 'gsap';
 
@@ -350,6 +351,9 @@
                   {/if}
                 </span>
                 <span class="nav-label">{$language === 'vi' ? tab.labelVi : tab.labelEn}</span>
+                {#if tab.id === 'about' && $updateStore.status === 'available'}
+                  <span class="nav-update-badge">NEW</span>
+                {/if}
               </button>
             {/each}
           {/if}
@@ -818,10 +822,10 @@
             <div class="card">
               <div class="setting-row">
                 <div class="row-info">
-                  <span class="row-title">Vertex Converter</span>
+                  <span class="row-title">Vertex Radial Converter</span>
                   <span class="row-desc">{$language === 'vi' ? 'Bộ công cụ chuyển đổi tệp đa phương tiện tức thì.' : 'Instant radial file conversion toolkit.'}</span>
                 </div>
-                <span class="badge-key">v0.1.0</span>
+                <span class="badge-key">v{$updateStore.currentVersion}</span>
               </div>
               <div class="divider"></div>
               <div class="setting-row">
@@ -831,6 +835,123 @@
                 </div>
                 <span class="badge-key">Rust + Tauri</span>
               </div>
+              <div class="divider"></div>
+              <div class="setting-row">
+                <div class="row-info">
+                  <span class="row-title">GitHub Repository</span>
+                  <span class="row-desc">rainaku/Vertex</span>
+                </div>
+                <button type="button" class="btn-subtle" on:click={() => openReleasePage()}>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+                    <polyline points="15 3 21 3 21 9"></polyline>
+                    <line x1="10" y1="14" x2="21" y2="3"></line>
+                  </svg>
+                  <span>{$language === 'vi' ? 'Mở GitHub' : 'Open GitHub'}</span>
+                </button>
+              </div>
+              <div class="divider"></div>
+              <div class="setting-row">
+                <div class="row-info">
+                  <span class="row-title">{$language === 'vi' ? 'Pháp lý & Quyền riêng tư' : 'Legal & Privacy'}</span>
+                  <span class="row-desc">{$language === 'vi' ? 'Xử lý cục bộ 100%, không thu thập dữ liệu cá nhân hay telemetry.' : '100% local processing, zero telemetry or personal data tracking.'}</span>
+                </div>
+                <div class="legal-links">
+                  <button type="button" class="btn-subtle" on:click={() => openReleasePage('https://github.com/rainaku/Vertex/blob/main/TERMS_OF_SERVICE.md')}>
+                    <span>{$language === 'vi' ? 'Điều khoản' : 'Terms'}</span>
+                  </button>
+                  <button type="button" class="btn-subtle" on:click={() => openReleasePage('https://github.com/rainaku/Vertex/blob/main/PRIVACY_POLICY.md')}>
+                    <span>{$language === 'vi' ? 'Bảo mật' : 'Privacy'}</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- ── Auto Update Card ────────────────────────────────────────── -->
+            <div class="section-title">{$language === 'vi' ? 'CẬP NHẬT PHIÊN BẢN' : 'SOFTWARE UPDATES'}</div>
+            <div class="card update-card" class:update-card-active={$updateStore.status === 'available'}>
+              <div class="setting-row">
+                <div class="row-info">
+                  <div class="update-header-line">
+                    <span class="row-title">{$language === 'vi' ? 'Trạng thái phát hành' : 'Release Status'}</span>
+                    {#if $updateStore.status === 'available'}
+                      <span class="badge-update-pulse">v{$updateStore.latestVersion} AVAILABLE</span>
+                    {/if}
+                  </div>
+                  <span class="row-desc">
+                    {#if $updateStore.status === 'checking'}
+                      {$language === 'vi' ? 'Đang kiểm tra phiên bản mới từ GitHub...' : 'Checking for releases on GitHub...'}
+                    {:else if $updateStore.status === 'up-to-date'}
+                      {$language === 'vi' ? `Bạn đang sử dụng phiên bản mới nhất (v${$updateStore.currentVersion}).` : `You are running the latest version (v${$updateStore.currentVersion}).`}
+                    {:else if $updateStore.status === 'available'}
+                      {$language === 'vi' ? `Đã có bản cập nhật mới v${$updateStore.latestVersion}! Bạn có thể tải và cài đặt ngay.` : `A new release v${$updateStore.latestVersion} is available!`}
+                    {:else if $updateStore.status === 'downloading'}
+                      {$language === 'vi' ? `Đang tải bản cập nhật: ${$updateStore.downloadProgress}%` : `Downloading update: ${$updateStore.downloadProgress}%`}
+                    {:else if $updateStore.status === 'downloaded'}
+                      {$language === 'vi' ? 'Đã tải xong bản cập nhật! Khởi động lại ứng dụng để áp dụng.' : 'Update downloaded! Restart to apply.'}
+                    {:else if $updateStore.status === 'error'}
+                      <span class="update-error-text">{$updateStore.error || ($language === 'vi' ? 'Lỗi kiểm tra cập nhật.' : 'Update check failed.')}</span>
+                    {:else}
+                      {$language === 'vi' ? 'Kiểm tra bản cập nhật mới nhất từ kho lưu trữ GitHub.' : 'Check for the latest releases from GitHub.'}
+                    {/if}
+                  </span>
+                </div>
+
+                <div class="update-actions">
+                  {#if $updateStore.status === 'available' || $updateStore.status === 'downloading' || $updateStore.status === 'downloaded'}
+                    <button
+                      type="button"
+                      class="btn-update-primary"
+                      on:click={installUpdate}
+                      disabled={$updateStore.status === 'downloading'}
+                    >
+                      {#if $updateStore.status === 'downloading'}
+                        <span class="spinner-inline"></span>
+                        <span>{$updateStore.downloadProgress}%</span>
+                      {:else if $updateStore.status === 'downloaded'}
+                        {$language === 'vi' ? 'Khởi động lại' : 'Restart Now'}
+                      {:else}
+                        {$language === 'vi' ? 'Cập nhật ngay' : 'Update Now'}
+                      {/if}
+                    </button>
+                  {/if}
+
+                  <button
+                    type="button"
+                    class="btn-subtle"
+                    on:click={() => checkForUpdates(true)}
+                    disabled={$updateStore.status === 'checking' || $updateStore.status === 'downloading'}
+                  >
+                    {#if $updateStore.status === 'checking'}
+                      <span class="spinner-inline"></span>
+                      <span>{$language === 'vi' ? 'Đang kiểm tra…' : 'Checking…'}</span>
+                    {:else}
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="23 4 23 10 17 10"></polyline>
+                        <polyline points="1 20 1 14 7 14"></polyline>
+                        <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                      </svg>
+                      <span>{$language === 'vi' ? 'Kiểm tra cập nhật' : 'Check for Updates'}</span>
+                    {/if}
+                  </button>
+                </div>
+              </div>
+
+              <!-- Download progress bar -->
+              {#if $updateStore.status === 'downloading'}
+                <div class="update-progress-container">
+                  <div class="update-progress-bar" style="width: {$updateStore.downloadProgress}%;"></div>
+                </div>
+              {/if}
+
+              <!-- Release notes if available -->
+              {#if $updateStore.status === 'available' && $updateStore.releaseNotes}
+                <div class="divider"></div>
+                <div class="update-notes-box">
+                  <div class="update-notes-title">{$language === 'vi' ? 'Chi tiết bản phát hành:' : 'Release Notes:'}</div>
+                  <pre class="update-notes-content">{$updateStore.releaseNotes}</pre>
+                </div>
+              {/if}
             </div>
           {/if}
 
@@ -1637,4 +1758,150 @@
     transform: translateY(-1px);
   }
   .btn-save:active { transform: scale(0.97) translateY(0); }
+
+  .legal-links {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  /* ── Auto Update UI Styles ─────────────────────────────────────────────────── */
+  .nav-update-badge {
+    margin-left: auto;
+    font-size: 9px;
+    font-weight: 800;
+    padding: 2px 6px;
+    border-radius: 6px;
+    background: #2563eb;
+    color: #ffffff;
+    letter-spacing: 0.5px;
+    box-shadow: 0 0 10px rgba(37, 99, 235, 0.45);
+    animation: pulse-badge 2s infinite ease-in-out;
+  }
+
+  @keyframes pulse-badge {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.8; transform: scale(1.05); }
+  }
+
+  .update-card-active {
+    border-color: rgba(37, 99, 235, 0.35) !important;
+    background: rgba(37, 99, 235, 0.04) !important;
+  }
+
+  .update-header-line {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .badge-update-pulse {
+    font-size: 10px;
+    font-weight: 800;
+    padding: 2px 7px;
+    border-radius: 6px;
+    background: rgba(37, 99, 235, 0.2);
+    border: 1px solid rgba(37, 99, 235, 0.5);
+    color: #60a5fa;
+    letter-spacing: 0.4px;
+  }
+
+  .update-error-text {
+    color: #f87171;
+  }
+
+  .update-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+
+  .btn-update-primary {
+    height: 32px;
+    padding: 0 14px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 700;
+    color: #ffffff;
+    background: #2563eb;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 9px;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(37, 99, 235, 0.35);
+    transition: all 0.15s ease;
+  }
+  .btn-update-primary:hover:not(:disabled) {
+    background: #1d4ed8;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.5);
+  }
+  .btn-update-primary:active:not(:disabled) {
+    transform: translateY(0) scale(0.97);
+  }
+  .btn-update-primary:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
+  }
+
+  .update-progress-container {
+    width: 100%;
+    height: 5px;
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 999px;
+    overflow: hidden;
+    margin-top: 10px;
+  }
+
+  .update-progress-bar {
+    height: 100%;
+    background: linear-gradient(90deg, #2563eb, #60a5fa);
+    border-radius: 999px;
+    transition: width 0.2s ease-out;
+  }
+
+  .update-notes-box {
+    margin-top: 8px;
+    padding: 10px 12px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 8px;
+    max-height: 140px;
+    overflow-y: auto;
+  }
+
+  .update-notes-title {
+    font-size: 11px;
+    font-weight: 700;
+    color: #a1a1aa;
+    margin-bottom: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .update-notes-content {
+    font-family: inherit;
+    font-size: 12px;
+    color: #d4d4d8;
+    white-space: pre-wrap;
+    word-break: break-word;
+    margin: 0;
+    line-height: 1.5;
+  }
+
+  .spinner-inline {
+    width: 12px;
+    height: 12px;
+    border: 2px solid rgba(255, 255, 255, 0.2);
+    border-top-color: currentColor;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    display: inline-block;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
 </style>

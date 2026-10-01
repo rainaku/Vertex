@@ -4,6 +4,7 @@
   import RadialWheel from './lib/RadialWheel.svelte';
   import OptionsPanel from './lib/OptionsPanel.svelte';
   import { defaultOptions, loadOptions } from './lib/settings';
+import { checkForUpdates } from './lib/updater';
   import {
     detectFile,
     getAvailableTargets,
@@ -56,6 +57,7 @@
   let settingsVisible = false;
   let optionsPanelRef: OptionsPanel | null = null;
   let unlistenSettings: (() => void) | null = null;
+  let unlistenUpdateAvailable: (() => void) | null = null;
 
   async function openSettings() {
     if (status === 'converting') return;
@@ -440,10 +442,18 @@
             // The wheel closes when the user drops/releases the mouse button or presses Esc.
           }
         });
+        unlistenUpdateAvailable = await listen('update_available', () => {
+          void checkForUpdates(false);
+        });
       } catch (err) {
         console.warn('Failed to register Tauri event handlers:', err);
       }
     }
+
+    // Auto-check for updates 10 seconds after startup in background
+    setTimeout(() => {
+      void checkForUpdates(false);
+    }, 10000);
   });
 
   onDestroy(() => {
@@ -457,6 +467,7 @@
     if (unlistenDragCancel) unlistenDragCancel();
     if (unlistenWheelShown) unlistenWheelShown();
     if (unlistenCloseRequested) unlistenCloseRequested();
+    if (unlistenUpdateAvailable) unlistenUpdateAvailable();
   });
 </script>
 
