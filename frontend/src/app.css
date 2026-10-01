@@ -1,0 +1,197 @@
+@font-face {
+  font-family: 'SF Pro Display';
+  src: url('/fonts/SF-Pro-Display-Bold.otf') format('opentype');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'SF Pro Display';
+  src: url('/fonts/SF-Pro-Display-Bold.otf') format('opentype');
+  font-weight: 800;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'SF Pro Display';
+  src: url('/fonts/SF-Pro-Display-Semibold.otf') format('opentype');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'SF Pro Display';
+  src: url('/fonts/SF-Pro-Display-Medium.otf') format('opentype');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'SF Pro Display';
+  src: url('/fonts/SF-Pro-Display-Regular.otf') format('opentype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'SF Pro Bold';
+  src: url('/fonts/SF-Pro-Display-Bold.otf') format('opentype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'SF Pro';
+  src: url('/fonts/SF-Pro-Display-Bold.otf') format('opentype');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  --font-family: 'SF Pro Display', 'SF Pro Bold', 'SF Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  
+  /* Solid Black & White Palette (No borders, pure shadow & solid contrast) */
+  --petal-fill: #000000;
+  --petal-stroke: none;
+  --petal-text: #ffffff;
+  
+  /* Petal Hovered / Highlighted (Inverted Solid White) */
+  --petal-hover-fill: #ffffff;
+  --petal-hover-stroke: none;
+  --petal-hover-text: #000000;
+  --petal-hover-shadow: drop-shadow(0 12px 28px rgba(0, 0, 0, 0.8));
+
+  /* Petal Converting */
+  --petal-converting-fill: #18181b;
+  --petal-converting-stroke: none;
+  --petal-converting-text: #ffffff;
+
+  /* Petal Done (Solid white with black checkmark) */
+  --petal-done-fill: #ffffff;
+  --petal-done-stroke: none;
+  --petal-done-text: #000000;
+
+  /* Petal Error (Solid black with white text) */
+  --petal-error-fill: #000000;
+  --petal-error-stroke: none;
+  --petal-error-text: #ffffff;
+
+  /* Petal Disabled */
+  --petal-disabled-fill: #0a0a0a;
+  --petal-disabled-stroke: none;
+  --petal-disabled-text: #52525b;
+
+  /* Center Hub & Pill */
+  --center-hub-fill: #000000;
+  --center-hub-stroke: none;
+  --center-pill-fill: #000000;
+  --center-pill-stroke: none;
+  --center-pill-text: #ffffff;
+  --center-pill-active-fill: #ffffff;
+  --center-pill-active-stroke: none;
+  --center-pill-active-text: #000000;
+
+  /* Toast Notification */
+  --toast-bg: #000000;
+  --toast-border: none;
+  --toast-text: #ffffff;
+  --toast-subtext: #a1a1aa;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Critical: full transparency for the ghost overlay window */
+html, body {
+  width: 100vw;
+  height: 100vh;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background: transparent !important;
+  font-family: var(--font-family);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+#app {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent !important;
+}
+
+/* ── Animations ──────────────────────────────────────────────────────────────── */
+
+/* Stagger Pop-in Animation */
+@keyframes petalPopIn {
+  0% {
+    opacity: 0;
+    transform: scale(0.65);
+  }
+  65% {
+    opacity: 1;
+    transform: scale(1.04);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* Shake Animation for Error */
+@keyframes petalShake {
+  0%, 100% { transform: translateX(0); }
+  20%, 60% { transform: translateX(-5px); }
+  40%, 80% { transform: translateX(5px); }
+}
+
+/* Pulse animation for converting state */
+@keyframes pulseGlow {
+  0%, 100% {
+    filter: drop-shadow(0 0 6px rgba(255, 255, 255, 0.3));
+  }
+  50% {
+    filter: drop-shadow(0 0 16px rgba(255, 255, 255, 0.8));
+  }
+}
+
+@keyframes spin {
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes toastSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Accessibility: respect prefers-reduced-motion */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+

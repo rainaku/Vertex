@@ -1,0 +1,21 @@
+[package]
+name = "vertex-core"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+infer.workspace = true
+mime_guess.workspace = true
+image.workspace = true
+ravif.workspace = true
+rgb.workspace = true
+
+[dev-dependencies]
+tempfile = "3.16"
