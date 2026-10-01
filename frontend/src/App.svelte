@@ -16,6 +16,9 @@
     hideWheelWindow,
     forceHideWheelWindow,
     setConvertingState,
+    centerWindow,
+    prepareSettingsWindow,
+    restoreWheelWindow,
     isTauri,
   } from './lib/tauri-bridge';
   import { hitTest } from './lib/geometry';
@@ -51,6 +54,7 @@
   // Options
   let options: Options = defaultOptions();
   let settingsVisible = false;
+  let optionsPanelRef: OptionsPanel | null = null;
   let unlistenSettings: (() => void) | null = null;
 
   async function openSettings() {
@@ -59,8 +63,9 @@
     isDragging = false;
     wheelVisible = false;
     wheelClosing = false;
-    settingsVisible = true;
+    await prepareSettingsWindow();
     await setWindowPassthrough(false);
+    settingsVisible = true;
   }
 
   async function closeSettings() {
@@ -71,6 +76,7 @@
     clearDragDwell();
     await setWindowPassthrough(true);
     await forceHideWheelWindow();
+    await restoreWheelWindow();
   }
 
   let unlistenProgress: (() => void) | null = null;
@@ -326,7 +332,11 @@
         });
         unlistenCloseRequested = await listen('wheel_close_requested', () => {
           if (settingsVisible) {
-            void closeSettings();
+            if (optionsPanelRef) {
+              optionsPanelRef.requestClose();
+            } else {
+              void closeSettings();
+            }
           } else {
             void hideWheel();
           }
@@ -339,12 +349,14 @@
         });
 
         unlistenDragEnd = await listen('shift_drag_end', () => {
+          if (settingsVisible) return;
           if (status !== 'converting') {
             hideWheel();
           }
         });
 
         unlistenDragCancel = await listen('drag_cancelled', () => {
+          if (settingsVisible) return;
           if (status !== 'converting') {
             hideWheel();
           }
@@ -485,6 +497,7 @@
 
 {#if settingsVisible}
   <OptionsPanel
+    bind:this={optionsPanelRef}
     {options}
     onClose={closeSettings}
     onSave={(value) => {

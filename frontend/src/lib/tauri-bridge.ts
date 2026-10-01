@@ -234,3 +234,53 @@ export async function listenProgress(
     callback(event.payload);
   });
 }
+
+export async function centerWindow(): Promise<void> {
+  if (!isTauri) return;
+  try {
+    const { getCurrentWindow } = await import('@tauri-apps/api/window');
+    await getCurrentWindow().center();
+  } catch {
+    const { invoke } = await import('@tauri-apps/api/core');
+    await invoke('center_window');
+  }
+}
+
+export async function prepareSettingsWindow(): Promise<void> {
+  if (!isTauri) return;
+  try {
+    const { getCurrentWindow, LogicalSize } = await import('@tauri-apps/api/window');
+    const win = getCurrentWindow();
+    await win.setSize(new LogicalSize(1080, 780));
+    await win.center();
+    await win.show();
+    await win.setFocus();
+  } catch (err) {
+    console.warn('Frontend setSize failed:', err);
+  }
+  try {
+    const { invoke } = await import('@tauri-apps/api/core');
+    await invoke('prepare_settings_window');
+  } catch (err) {
+    console.warn('prepare_settings_window invoke failed:', err);
+  }
+}
+
+export async function restoreWheelWindow(): Promise<void> {
+  if (!isTauri) return;
+  try {
+    const { getCurrentWindow, LogicalSize } = await import('@tauri-apps/api/window');
+    const win = getCurrentWindow();
+    await win.setSize(new LogicalSize(480, 480));
+  } catch (err) {
+    console.warn('Frontend restore size failed:', err);
+  }
+  try {
+    const { invoke } = await import('@tauri-apps/api/core');
+    await invoke('restore_wheel_window');
+  } catch (err) {
+    console.warn('restore_wheel_window invoke failed:', err);
+  }
+}
+
+

@@ -360,14 +360,54 @@ pub struct CursorPos {
     pub y: i32,
 }
 
-/// Get the current OS cursor position (screen coordinates)
+/// Center the main window on the screen
 #[tauri::command]
-pub fn get_cursor_pos(app: AppHandle) -> Result<CursorPos, String> {
-    // Use the monitor + cursor position from the window
+pub fn center_window(app: AppHandle) -> Result<(), String> {
     if let Some(win) = app.get_webview_window("main") {
-        // Tauri 2: use the window's position and the webview's inner cursor
-        // We return (0,0) as fallback; real pos comes from drag events
-        let _ = win;
+        win.center().map_err(|e| e.to_string())?;
     }
-    Ok(CursorPos { x: 0, y: 0 })
+    Ok(())
 }
+
+/// Prepare window for settings: clear passthrough, resize with 80px margins, center, show, and focus
+#[tauri::command]
+pub fn prepare_settings_window(app: AppHandle) -> Result<(), String> {
+    if let Some(win) = app.get_webview_window("main") {
+        crate::wheel_window::set_passthrough(&win, false)?;
+
+        win.set_size(tauri::Size::Logical(tauri::LogicalSize {
+            width: 1080.0,
+            height: 780.0,
+        })).map_err(|e| e.to_string())?;
+        win.center().map_err(|e| e.to_string())?;
+
+        #[cfg(target_os = "windows")]
+        unsafe {
+            use windows_sys::Win32::UI::WindowsAndMessaging::{
+                SetForegroundWindow, SetWindowPos, HWND_TOPMOST, SWP_NOMOVE, SWP_NOSIZE,
+                SWP_SHOWWINDOW,
+            };
+            let hwnd = win.hwnd().map_err(|e| e.to_string())?.0 as _;
+            SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+            SetForegroundWindow(hwnd);
+        }
+
+        win.show().map_err(|e| e.to_string())?;
+        win.set_focus().map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+/// Restore window size back to 480x480 for wheel usage
+#[tauri::command]
+pub fn restore_wheel_window(app: AppHandle) -> Result<(), String> {
+    if let Some(win) = app.get_webview_window("main") {
+        win.set_size(tauri::Size::Logical(tauri::LogicalSize {
+            width: 480.0,
+            height: 480.0,
+        })).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+

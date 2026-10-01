@@ -194,16 +194,9 @@
     transition: width 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
   }
 
-  /* ─── Ruler Ticks ─────────────────────────────────────────────────────────── */
+  /* ─── Ruler Ticks (Hidden for sleek V-Notch pill design) ────────────────── */
   .ticks-layer {
-    position: absolute;
-    inset: 0;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0 10px;
-    pointer-events: none;
-    gap: 0;
+    display: none;
   }
 
   .tick {
@@ -310,8 +303,8 @@
   }
 
   .val-number {
-    font-size: 11.5px;
-    font-weight: 600;
+    font-size: 12px;
+    font-weight: 700;
     color: #ffffff;
     transition: color 0.15s ease;
   }
@@ -321,9 +314,9 @@
   }
 
   .val-unit {
-    font-size: 9px;
-    font-weight: 500;
-    color: #52525b;
+    font-size: 9.5px;
+    font-weight: 700;
+    color: #71717a;
     letter-spacing: 0.02em;
   }
 </style>

@@ -121,6 +121,7 @@ html, body {
   overflow: hidden;
   background: transparent !important;
   font-family: var(--font-family);
+  font-weight: 700;
   user-select: none;
   -webkit-user-select: none;
 }

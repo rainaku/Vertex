@@ -44,8 +44,10 @@ pub fn run() {
             show_wheel_window,
             set_window_passthrough,
             set_converting_state,
-            get_cursor_pos,
             set_app_language,
+            center_window,
+            prepare_settings_window,
+            restore_wheel_window,
         ])
         .setup(|app| {
             // Build Tray Menu
@@ -75,12 +77,13 @@ pub fn run() {
                         }
                     }
                     "settings" => {
+                        let _ = crate::commands::prepare_settings_window(app.clone());
                         if let Some(win) = app.get_webview_window("main") {
                             if let Err(error) =
                                 wheel_window::show(&win, None, true).and_then(|_| {
                                     win.emit("open_advanced_settings", ())
                                         .map_err(|e| e.to_string())
-                                })
+                                 })
                             {
                                 tracing::warn!(%error, "Could not open advanced settings");
                             }
