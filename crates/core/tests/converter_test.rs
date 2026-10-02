@@ -254,32 +254,44 @@ fn test_ffmpeg_video_conversion_and_audio_extraction() {
     let cancel = CancelToken::new();
     let opts = Options::default();
 
-    // 1. Audio Extraction: MP4 -> MP3
-    let progress_mp3 = Arc::new(AtomicBool::new(false));
-    let progress_mp3_clone = progress_mp3.clone();
-    let out_mp3 = registry
-        .convert(
-            &input_mp4,
-            Format::Mp3,
-            &opts,
-            &move |p| {
-                if p > 0.0 {
-                    progress_mp3_clone.store(true, Ordering::SeqCst);
-                }
-            },
-            &cancel,
-        )
-        .expect("extract audio from mp4 to mp3");
-
-    assert!(out_mp3.exists(), "Extracted MP3 must exist");
-    assert!(
-        out_mp3.metadata().unwrap().len() > 100,
-        "Extracted MP3 must not be empty"
-    );
-    assert!(
-        progress_mp3.load(Ordering::SeqCst),
-        "Progress callback must be invoked for extraction"
-    );
+    let ffprobe = vertex_core::converters::ffmpeg::find_ffprobe().expect("ffprobe required");
+    for target in [
+        Format::Mp3,
+        Format::Wav,
+        Format::Flac,
+        Format::Aac,
+        Format::M4a,
+        Format::Ogg,
+        Format::Opus,
+        Format::Aiff,
+        Format::Wma,
+    ] {
+        let output = registry
+            .convert(&input_mp4, target, &opts, &|_| {}, &cancel)
+            .unwrap_or_else(|error| panic!("extract {target:?}: {error}"));
+        let mut probe = std::process::Command::new(&ffprobe);
+        probe
+            .args([
+                "-v",
+                "error",
+                "-show_entries",
+                "stream=codec_type",
+                "-of",
+                "json",
+            ])
+            .arg(output);
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            probe.creation_flags(0x08000000);
+        }
+        let result = probe.output().unwrap();
+        assert!(result.status.success());
+        let data: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
+        let streams = data["streams"].as_array().unwrap();
+        assert_eq!(streams.len(), 1);
+        assert_eq!(streams[0]["codec_type"], "audio");
+    }
 
     // 2. Video Conversion: MP4 -> WEBM
     let progress_webm = Arc::new(AtomicBool::new(false));
@@ -371,4 +383,36 @@ fn batch_targets_only_queries_distinct_formats() {
     assert!(registry
         .batch_targets(&[Format::Png, Format::Pdf])
         .is_empty());
+}
+
+#[test]
+fn video_targets_group_audio_and_unsupported_routes_report_formats() {
+    let registry = Registry::default();
+    let targets = registry.available_targets(Format::Mp4);
+    assert!(targets[..7]
+        .iter()
+        .all(|(target, _)| target.category() == vertex_core::Category::Video));
+    assert!(targets[7..16]
+        .iter()
+        .all(|(target, _)| target.category() == vertex_core::Category::Audio));
+    assert_eq!(registry.batch_targets(&[Format::Mp4, Format::Mp3]).len(), 9);
+    let dir = tempdir().unwrap();
+    let input = dir.path().join("sample.png");
+    image::RgbaImage::new(1, 1).save(&input).unwrap();
+    for target in [Format::Pdf, Format::Svg] {
+        let error = registry
+            .convert(
+                &input,
+                target,
+                &Options::default(),
+                &|_| {},
+                &CancelToken::new(),
+            )
+            .unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            format!("Vertex chưa hỗ trợ chuyển đổi từ PNG sang {target}.")
+        );
+    }
+    assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
 }

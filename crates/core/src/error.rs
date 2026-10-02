@@ -15,7 +15,7 @@ pub enum VertexError {
     #[error("Unrecognized or unsupported file format for: {0}")]
     UnrecognizedFormat(PathBuf),
 
-    #[error("No conversion route found from {from} to {to}")]
+    #[error("Vertex chưa hỗ trợ chuyển đổi từ {from} sang {to}.")]
     NoConversionRoute { from: String, to: String },
 
     #[error("Conversion engine missing: {0}")]

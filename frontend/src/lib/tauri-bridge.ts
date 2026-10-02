@@ -16,9 +16,9 @@ export async function detectFile(path: string): Promise<FormatInfo> {
     // Browser mock for dev
     const ext = path.split('.').pop()?.toUpperCase() || 'PNG';
     let cat = 'image';
-    if (['MP3', 'WAV', 'FLAC', 'AAC', 'OGG', 'M4A', 'OPUS'].includes(ext)) {
+    if (['MP3', 'WAV', 'FLAC', 'AAC', 'OGG', 'M4A', 'OPUS', 'AIFF', 'WMA'].includes(ext)) {
       cat = 'audio';
-    } else if (['MP4', 'MOV', 'MKV', 'AVI', 'WEBM', 'WMV', 'FLV'].includes(ext)) {
+    } else if (['MP4', 'MOV', 'MKV', 'AVI', 'WEBM', 'WMV', 'FLV', '3GP', 'TS'].includes(ext)) {
       cat = 'video';
     }
     return {
@@ -36,14 +36,14 @@ export async function detectFile(path: string): Promise<FormatInfo> {
 export async function getAvailableTargets(from: string): Promise<TargetFormatInfo[]> {
   if (!isTauri) {
     // Browser mock defaults
-    const audio = ['MP3', 'WAV', 'FLAC', 'AAC', 'OGG', 'M4A', 'OPUS'];
-    const video = ['MP4', 'WEBM', 'MOV', 'MKV', 'AVI', 'GIF', ...audio];
-    const image = ['PNG', 'JPG', 'WEBP', 'AVIF', 'BMP', 'ICO', 'TIFF', 'GIF', 'PDF'];
+    const audio = ['MP3', 'WAV', 'FLAC', 'AAC', 'OGG', 'M4A', 'OPUS', 'AIFF', 'WMA'];
+    const video = ['MP4', 'WEBM', 'MOV', 'MKV', 'AVI', '3GP', 'TS', ...audio, 'GIF'];
+    const image = ['PNG', 'JPG', 'WEBP', 'AVIF', 'BMP', 'ICO', 'TIFF', 'GIF'];
 
     let pool = image;
     if (audio.includes(from)) {
       pool = audio;
-    } else if (video.includes(from)) {
+    } else if (['MP4', 'MOV', 'MKV', 'AVI', 'WEBM', 'WMV', 'FLV', '3GP', 'TS'].includes(from)) {
       pool = video;
     }
 
@@ -67,24 +67,12 @@ export async function getAvailableTargets(from: string): Promise<TargetFormatInf
 
 export async function getBatchInfo(paths: string[]): Promise<BatchInfo> {
   if (!isTauri) {
-    const files: FormatInfo[] = paths.map((p) => {
-      const ext = p.split('.').pop()?.toUpperCase() || 'PNG';
-      return {
-        format: ext,
-        label: ext,
-        extension: ext.toLowerCase(),
-        category: 'image',
-        filename: p.split(/[/\\]/).pop() || 'file',
-      };
-    });
+    const files = await Promise.all(paths.map(detectFile));
+    const targets = await Promise.all(files.map(file => getAvailableTargets(file.format)));
     return {
       files,
-      common_targets: [
-        { format: 'PNG', label: 'PNG', extension: 'png', category: 'image', available: true },
-        { format: 'WEBP', label: 'WEBP', extension: 'webp', category: 'image', available: true },
-        { format: 'JPG', label: 'JPG', extension: 'jpg', category: 'image', available: true },
-        { format: 'AVIF', label: 'AVIF', extension: 'avif', category: 'image', available: true },
-      ],
+      common_targets: (targets[0] ?? []).filter(target =>
+        targets.every(list => list.some(item => item.format === target.format))),
     };
   }
   const { invoke } = await import('@tauri-apps/api/core');

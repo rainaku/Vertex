@@ -208,7 +208,7 @@ impl Converter for FfmpegConverter {
 
     fn targets(&self, from: Format) -> Vec<Format> {
         match from {
-            // Video sources can convert to other videos or extract audio
+            // Video sources support video conversion and audio extraction.
             Format::Mp4
             | Format::Mov
             | Format::Mkv
@@ -228,7 +228,6 @@ impl Converter for FfmpegConverter {
                     Format::ThreeGp,
                     Format::Ts,
                     Format::Gif,
-                    // Audio extraction outputs
                     Format::Mp3,
                     Format::Wav,
                     Format::Flac,
@@ -311,11 +310,20 @@ impl Converter for FfmpegConverter {
         )
         .ok_or_else(|| VertexError::UnrecognizedFormat(output.to_path_buf()))?;
 
+        if !self.targets(from_format).contains(&to_format) {
+            return Err(VertexError::NoConversionRoute {
+                from: from_format.to_string(),
+                to: to_format.to_string(),
+            });
+        }
+
         // Build command args for MAXIMUM PERFORMANCE
         let mut args: Vec<String> = vec!["-nostdin".into(), "-y".into(), "-hide_banner".into()];
 
         // Hardware acceleration for video inputs (auto-negotiates NVDEC/D3D11VA/DXVA2/QSV)
-        if matches!(from_format.category(), Category::Video) || from_format == Format::Gif {
+        if to_format.category() != Category::Audio
+            && (matches!(from_format.category(), Category::Video) || from_format == Format::Gif)
+        {
             args.push("-hwaccel".into());
             args.push("auto".into());
         }
@@ -325,12 +333,8 @@ impl Converter for FfmpegConverter {
         args.push(input.to_string_lossy().to_string());
 
         // Stream and codec mapping
-        let is_video_to_audio = matches!(from_format.category(), Category::Video)
-            && matches!(to_format.category(), Category::Audio);
-
-        if is_video_to_audio {
-            // Strip video stream for pure audio extraction
-            args.push("-vn".into());
+        if from_format.category() == Category::Video && to_format.category() == Category::Audio {
+            args.extend(["-map".into(), "0:a:0".into(), "-vn".into()]);
             append_audio_codec_args(&mut args, to_format);
         } else if matches!(from_format.category(), Category::Audio)
             && matches!(to_format.category(), Category::Audio)

@@ -54,14 +54,19 @@
 
 Converted files are saved automatically in the same folder as the original file.
 
+For video inputs, video formats appear first. Hover over **…** to reach the audio formats: **MP3, WAV, FLAC, AAC, M4A, OGG, OPUS, AIFF, WMA**. FFmpeg is required to extract the first audio track.
+
+
+To launch Vertex automatically when you sign in to Windows, open **Advanced settings → General → Start with Windows**. The toggle applies immediately. Vertex starts hidden in the system tray.
+
 <div id="supported-formats"></div>
 
 ## Supported formats
 
 | Category | Formats | Notes |
 | --- | --- | --- |
-| Video | MP4, MOV, MKV, AVI, WEBM, WMV, FLV, 3GP, TS, GIF | Includes MP4 to MP4 compression to reduce file size |
-| Audio | MP3, WAV, FLAC, AAC, M4A, OGG, OPUS, AIFF, WMA | Convert music or extract audio directly from video files |
+| Video | MP4, MOV, MKV, AVI, WEBM, WMV, FLV, 3GP, TS | Includes MP4 to MP4 compression to reduce file size |
+| Audio | MP3, WAV, FLAC, AAC, M4A, OGG, OPUS, AIFF, WMA | Convert audio files or extract audio from video |
 | Image | PNG, JPEG, WEBP, BMP, ICO, TIFF, QOI, AVIF | Fast conversion across popular photo and icon formats |
 
 <div id="installation"></div>

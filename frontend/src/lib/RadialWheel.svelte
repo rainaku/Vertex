@@ -9,6 +9,7 @@
   export let progress: number = 0;
   export let stopping = false;
   export let status: 'idle' | 'converting' | 'done' | 'error' = 'idle';
+  export let conversionError = '';
   export let sourceFormat: string | null = null;
   export let hasMorePages: boolean = false;
   export let page: number = 0;
@@ -305,15 +306,15 @@
         {/if}
       </text>
 
-      <!-- Page dots indicator when multi-page -->
-      {#if hasMorePages && totalPages > 1}
+      <!-- Only show page dots beneath a single-line, idle center label. -->
+      {#if hasMorePages && totalPages > 1 && !activeFormat && activeIndex !== 7 && status === 'idle'}
         <g class="page-dots" transform="translate(0, 13)">
           {#each Array(totalPages) as _, pIdx}
             <circle
               cx={(pIdx - (totalPages - 1) / 2) * 7}
               cy="0"
               r={pIdx === page ? 2 : 1.2}
-              fill={activeFormat ? "#000000" : "#ffffff"}
+              fill="var(--center-pill-text, #ffffff)"
               opacity={pIdx === page ? 0.9 : 0.3}
             />
           {/each}
@@ -322,8 +323,14 @@
     </g>
   </svg>
 
+  {#if conversionError}
+    <div class="tooltip-container conversion-error" role="alert">
+      <div class="tooltip-glass"><span>{conversionError}</span></div>
+    </div>
+  {/if}
+
   <!-- Missing Engine Tooltip -->
-  {#if activeFormat && !activeFormat.available && activeFormat.reason}
+  {#if !conversionError && activeFormat && !activeFormat.available && activeFormat.reason}
     <div class="tooltip-container">
       <div class="tooltip-glass">
         <span class="tooltip-icon">⚠️</span>
@@ -588,6 +595,20 @@
     font-weight: 600;
     white-space: nowrap;
     box-shadow: 0 10px 28px rgba(0, 0, 0, 0.75);
+  }
+
+  .conversion-error {
+    top: 320px;
+    width: 400px;
+    max-width: 85%;
+  }
+
+  .conversion-error .tooltip-glass {
+    white-space: normal;
+    overflow-wrap: anywhere;
+    text-align: center;
+    border-radius: 16px;
+    padding: 12px 16px;
   }
 
   .tooltip-icon {

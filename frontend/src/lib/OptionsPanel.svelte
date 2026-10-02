@@ -7,6 +7,7 @@
   import { updateStore, checkForUpdates, installUpdate, openReleasePage } from './updater';
   import ElasticSlider from './ElasticSlider.svelte';
   import { gsap } from 'gsap';
+  import { enable, disable, isEnabled } from '@tauri-apps/plugin-autostart';
 
   export let options: Options;
   export let onSave: (value: Options) => void;
@@ -14,6 +15,54 @@
 
   let draft = normalizeOptions(structuredClone(options));
   let error = '';
+  let autostartEnabled = false;
+  let autostartBusy = true;
+  let autostartLoaded = false;
+  let autostartError = false;
+
+  async function refreshAutostart() {
+    if (!isTauri) {
+      autostartBusy = false;
+      return;
+    }
+    autostartBusy = true;
+    autostartError = false;
+    try {
+      autostartEnabled = await isEnabled();
+      autostartLoaded = true;
+    } catch {
+      autostartLoaded = false;
+      autostartError = true;
+    } finally {
+      autostartBusy = false;
+    }
+  }
+
+  async function toggleAutostart(event: Event) {
+    const input = event.currentTarget as HTMLInputElement;
+    const requested = input.checked;
+    input.checked = autostartEnabled;
+    if (!isTauri || autostartBusy || !autostartLoaded) return;
+    autostartBusy = true;
+    autostartError = false;
+    try {
+      if (requested) await enable();
+      else await disable();
+      autostartEnabled = await isEnabled();
+      autostartError = autostartEnabled !== requested;
+    } catch {
+      autostartError = true;
+      // A write may have succeeded even if the verification failed.
+      autostartLoaded = false;
+    } finally {
+      autostartBusy = false;
+    }
+  }
+
+  function handleWindowFocus() {
+    if (!autostartBusy) void refreshAutostart();
+  }
+
   let pickingFolder = false;
   let isClosing = false;
   let appliedSuccess = false;
@@ -173,10 +222,13 @@
 
   onMount(() => {
     window.addEventListener('keydown', handleGlobalKeyDown, true);
+    window.addEventListener('focus', handleWindowFocus);
+    void refreshAutostart();
   });
 
   onDestroy(() => {
     window.removeEventListener('keydown', handleGlobalKeyDown, true);
+    window.removeEventListener('focus', handleWindowFocus);
     if (appliedTimer) clearTimeout(appliedTimer);
   });
 
@@ -234,6 +286,7 @@
     return text.toLowerCase().includes(lowerSearch);
   }
 
+  $: hasMatchAutostart = matchText('khởi động cùng windows') || matchText('startup') || matchText('autostart') || matchText('boot') || matchText('start with windows');
   $: hasMatchLanguage = matchText('ngôn ngữ') || matchText('language') || matchText('tiếng việt') || matchText('english');
   $: hasMatchQuality = matchText('chất lượng') || matchText('quality') || matchText('jpg') || matchText('avif') || matchText('nén');
   $: hasMatchFolder = matchText('thư mục') || matchText('folder') || matchText('output') || matchText('đầu ra') || matchText('đích');
@@ -413,8 +466,35 @@
         {#key `${activeTab}::${isSearching}`}
         <div class="content-scroll" use:gsapPane>
           {#if isSearching}
-            <!-- ── Search Results Mode ──────────────────────────────────────── -->
             <div class="section-title">{$language === 'vi' ? 'KẾT QUẢ TÌM KIẾM' : 'SEARCH RESULTS'}</div>
+          {/if}
+          {#if (!isSearching && activeTab === 'general') || (isSearching && hasMatchAutostart)}
+            <div class="card">
+              <div class="setting-row">
+                <div class="row-info">
+                  <span class="row-title">{$language === 'vi' ? 'Khởi động cùng Windows' : 'Start with Windows'}</span>
+                  <span class="row-desc">{$language === 'vi' ? 'Tự chạy Vertex ở khay hệ thống khi đăng nhập. Thay đổi có hiệu lực ngay.' : 'Launch Vertex in the system tray when you sign in. Changes apply immediately.'}</span>
+                  {#if !isTauri}
+                    <span class="row-desc">{$language === 'vi' ? 'Chỉ khả dụng trong ứng dụng desktop.' : 'Available in the desktop app only.'}</span>
+                  {:else if autostartBusy}
+                    <span class="row-desc" role="status">{$language === 'vi' ? 'Đang cập nhật trạng thái…' : 'Updating status…'}</span>
+                  {/if}
+                </div>
+                <label class="switch">
+                  <input type="checkbox" checked={autostartEnabled} on:change={toggleAutostart} disabled={!isTauri || autostartBusy || !autostartLoaded} aria-label={$language === 'vi' ? 'Khởi động cùng Windows' : 'Start with Windows'}/>
+                  <span class="slider"></span>
+                </label>
+              </div>
+              {#if autostartError}
+                <div class="setting-row">
+                  <span class="row-desc" role="alert">{$language === 'vi' ? 'Không thể đọc hoặc thay đổi cài đặt khởi động Windows.' : 'Could not read or change the Windows startup setting.'}</span>
+                  <button type="button" class="btn-subtle" on:click={refreshAutostart} disabled={autostartBusy}>{$language === 'vi' ? 'Thử lại' : 'Retry'}</button>
+                </div>
+              {/if}
+            </div>
+          {/if}
+          {#if isSearching}
+            <!-- Search results -->
             {#if hasAnySearchResult}
               <div class="card">
                 {#if hasMatchLanguage}
@@ -571,7 +651,7 @@
                   </div>
                 {/if}
               </div>
-            {:else}
+            {:else if !hasMatchAutostart}
               <div class="card empty-search-card">
                 <span class="empty-title">{$language === 'vi' ? 'Không tìm thấy kết quả' : 'No settings found'}</span>
                 <span class="empty-sub">{$language === 'vi' ? `Không có tùy chọn nào khớp với "${searchQuery}"` : `No options matching "${searchQuery}"`}</span>
@@ -1416,6 +1496,16 @@
     border: 1px solid rgba(255, 255, 255, 0.12);
     border-radius: 999px;
     transition: background 0.2s ease, border-color 0.2s ease;
+  }
+
+  .switch input:disabled + .slider {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  .switch input:focus-visible + .slider {
+    outline: 2px solid #22c55e;
+    outline-offset: 3px;
   }
 
   .switch .slider::before {

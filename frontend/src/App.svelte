@@ -31,6 +31,7 @@ import { checkForUpdates } from './lib/updater';
   let activeIndex: number = -1;
   let convertingIndex: number = -1;
   let progress: number = 0;
+  let conversionError = '';
   let status: 'idle' | 'converting' | 'done' | 'error' = 'idle';
 
   let currentFile: FormatInfo | null = null;
@@ -90,6 +91,12 @@ import { checkForUpdates } from './lib/updater';
   let unlistenCloseRequested: (() => void) | null = null;
 
   // ─── Helpers ─────────────────────────────────────────────────────────────────
+
+  function orderTargets(targets: TargetFormatInfo[], files: FormatInfo[]) {
+    const source = files.length === 1 ? files[0].format : null;
+    return [...targets]
+      .sort((a, b) => Number(b.format === source) - Number(a.format === source));
+  }
 
   function updatePagedFormats() {
     if (allAvailableFormats.length <= 8) {
@@ -194,6 +201,7 @@ import { checkForUpdates } from './lib/updater';
 
   async function handleFileLoaded(paths: string[]) {
     if (paths.length === 0) return;
+    conversionError = '';
     currentFilePaths = paths;
 
     if (paths.length === 1) {
@@ -202,7 +210,7 @@ import { checkForUpdates } from './lib/updater';
         currentFile = info;
         sourceFormatLabel = info.label;
         const targets = await getAvailableTargets(info.format);
-        allAvailableFormats = [...targets].sort((a, b) => Number(b.format === info.format) - Number(a.format === info.format));
+        allAvailableFormats = orderTargets(targets, [info]);
         page = 0;
         updatePagedFormats();
       } catch (e) {
@@ -213,7 +221,7 @@ import { checkForUpdates } from './lib/updater';
         const batch = await getBatchInfo(paths);
         currentFile = batch.files[0] || null;
         sourceFormatLabel = `BATCH (${paths.length})`;
-        allAvailableFormats = batch.common_targets;
+        allAvailableFormats = orderTargets(batch.common_targets, batch.files);
         page = 0;
         updatePagedFormats();
       } catch (e) {
@@ -226,6 +234,7 @@ import { checkForUpdates } from './lib/updater';
 
   async function startConversion(targetFmt: TargetFormatInfo, index: number) {
     if (!currentFilePaths.length || settingsVisible || status === 'converting') return;
+    conversionError = '';
     const conversionOptions = structuredClone(options);
 
     clearDragDwell();
@@ -261,6 +270,7 @@ import { checkForUpdates } from './lib/updater';
         progress = 0;
         await hideWheel();
       } else {
+        conversionError = res.error || ($language === 'vi' ? 'Chuyển đổi thất bại.' : 'Conversion failed.');
         status = 'error';
         setTimeout(async () => {
           status = 'idle';
@@ -269,6 +279,7 @@ import { checkForUpdates } from './lib/updater';
         }, 2000);
       }
     } catch (e: any) {
+      conversionError = String(e);
       status = 'error';
       setTimeout(async () => {
         status = 'idle';
@@ -428,7 +439,8 @@ import { checkForUpdates } from './lib/updater';
               if (hit.type === 'petal' && hit.index >= 0 && hit.index < formats.length) {
                 const target = formats[hit.index];
                 if (target && target.available) {
-                  currentFilePaths = paths;
+                  conversionError = '';
+    currentFilePaths = paths;
                   startConversion(target, hit.index);
                   return;
                 }
@@ -480,6 +492,7 @@ import { checkForUpdates } from './lib/updater';
   <div bind:this={wheelElement} class="wheel-wrapper" class:visible={wheelVisible && !settingsVisible} class:closing={wheelClosing}>
     <RadialWheel
       {formats}
+      {conversionError}
       {activeIndex}
       {convertingIndex}
       {progress}

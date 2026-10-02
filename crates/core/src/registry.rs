@@ -43,7 +43,7 @@ impl Registry {
         for conv in &self.converters {
             if conv.sources().contains(&from) {
                 let avail = conv.available();
-                for target in conv.targets(from) {
+                for target in conv.targets(from).into_iter() {
                     // If we already have a target, keep the one that is available (Ok)
                     target_map
                         .entry(target)
@@ -121,6 +121,16 @@ impl Registry {
         cancel: &CancelToken,
     ) -> Result<PathBuf> {
         cancel.check()?;
+        let from_format = detect_format(input)?;
+        if self.find_converter(from_format, target_format).is_none()
+            && (from_format == target_format
+                || self.find_path(from_format, target_format).is_none())
+        {
+            return Err(VertexError::NoConversionRoute {
+                from: from_format.to_string(),
+                to: target_format.to_string(),
+            });
+        }
         let destination = resolve_target_path(input, target_format, opts)?;
         let staged = tempfile::Builder::new()
             .prefix(".vertex-")
@@ -269,7 +279,7 @@ impl Registry {
 
             for conv in &self.converters {
                 if conv.available().is_ok() && conv.sources().contains(&curr) {
-                    for next in conv.targets(curr) {
+                    for next in conv.targets(curr).into_iter() {
                         if !visited.contains(&next) {
                             visited.insert(next);
                             let mut next_path = path.clone();
@@ -294,6 +304,21 @@ fn sort_targets_by_affinity(
     preferred_category: crate::format::Category,
 ) {
     targets.sort_by(|(a, _), (b, _)| {
+        // Keep each category together; video inputs show video, then audio.
+        let category_rank = |format: Format| {
+            if format.category() == preferred_category {
+                0
+            } else if format.category() == crate::format::Category::Audio {
+                1
+            } else {
+                2
+            }
+        };
+        let category_order = category_rank(*a).cmp(&category_rank(*b));
+        if category_order != std::cmp::Ordering::Equal {
+            return category_order;
+        }
+
         let a_same = a.category() == preferred_category;
         let b_same = b.category() == preferred_category;
 
