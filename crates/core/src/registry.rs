@@ -71,8 +71,15 @@ impl Registry {
 
         let first_targets = self.available_targets(formats[0]);
         let mut common: HashMap<Format, Availability> = first_targets.into_iter().collect();
+        let mut seen = HashSet::from([formats[0]]);
 
         for &fmt in &formats[1..] {
+            if common.is_empty() {
+                break;
+            }
+            if !seen.insert(fmt) {
+                continue;
+            }
             let next_targets: HashMap<Format, Availability> =
                 self.available_targets(fmt).into_iter().collect();
 

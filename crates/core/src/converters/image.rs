@@ -19,8 +19,11 @@ pub struct PureRustImageConverter {
 
 /// JPEG has no alpha channel. Dropping alpha exposes arbitrary RGB values
 /// stored in transparent pixels (often black, sometimes colored noise).
-fn flatten_on_background(img: &DynamicImage, background: [u8; 3]) -> RgbImage {
-    let rgba = img.to_rgba8();
+fn flatten_on_background(img: DynamicImage, background: [u8; 3]) -> RgbImage {
+    if !img.color().has_alpha() {
+        return img.into_rgb8();
+    }
+    let rgba = img.into_rgba8();
     RgbImage::from_fn(rgba.width(), rgba.height(), |x, y| {
         let pixel = rgba.get_pixel(x, y).0;
         let alpha = u32::from(pixel[3]);
@@ -49,7 +52,7 @@ fn resize_with_alpha(img: &DynamicImage, width: u32, height: u32) -> DynamicImag
     }
     let mut resized = DynamicImage::ImageRgba32F(premultiplied)
         .resize(width, height, FilterType::Lanczos3)
-        .to_rgba32f();
+        .into_rgba32f();
     for pixel in resized.pixels_mut() {
         let alpha = pixel[3].clamp(0.0, 1.0);
         for channel in &mut pixel.0[..3] {
@@ -169,7 +172,7 @@ impl Converter for PureRustImageConverter {
                     .map_err(VertexError::Image)?;
             }
             Format::Jpg => {
-                let rgb = flatten_on_background(&img, opts.jpeg_background);
+                let rgb = flatten_on_background(img, opts.jpeg_background);
                 let file = File::create(output).map_err(|e| VertexError::Io {
                     path: output.to_path_buf(),
                     source: e,
@@ -187,7 +190,7 @@ impl Converter for PureRustImageConverter {
                     .map_err(VertexError::Image)?;
             }
             Format::Webp => {
-                let rgba = img.to_rgba8();
+                let rgba = img.into_rgba8();
                 let file = File::create(output).map_err(|e| VertexError::Io {
                     path: output.to_path_buf(),
                     source: e,
@@ -204,15 +207,13 @@ impl Converter for PureRustImageConverter {
                     .map_err(VertexError::Image)?;
             }
             Format::Avif => {
-                let rgba = img.to_rgba8();
+                let rgba = img.into_rgba8();
                 let width = rgba.width() as usize;
                 let height = rgba.height() as usize;
                 let raw_bytes = rgba.as_raw();
 
-                let mut pixels = Vec::with_capacity(width * height);
-                for chunk in raw_bytes.as_chunks::<4>().0 {
-                    pixels.push(rgb::RGBA8::new(chunk[0], chunk[1], chunk[2], chunk[3]));
-                }
+                use rgb::FromSlice;
+                let pixels: &[rgb::RGBA8] = raw_bytes.as_rgba();
 
                 let encoder = ravif::Encoder::new()
                     .with_quality(opts.quality.clamp(1, 100) as f32)
@@ -222,7 +223,7 @@ impl Converter for PureRustImageConverter {
                     .with_speed(opts.avif_speed.clamp(1, 10));
 
                 let res = encoder
-                    .encode_rgba(ravif::Img::new(&pixels, width, height))
+                    .encode_rgba(ravif::Img::new(pixels, width, height))
                     .map_err(|e| VertexError::Encoding(format!("AVIF encode failed: {e}")))?;
 
                 std::fs::write(output, res.avif_file).map_err(|e| VertexError::Io {
@@ -239,9 +240,9 @@ impl Converter for PureRustImageConverter {
                 // BMP's grayscale+alpha path drops alpha; normalize to RGBA
                 // so the encoder writes the V4 header and explicit alpha mask.
                 let bmp = if img.color().has_alpha() {
-                    DynamicImage::ImageRgba8(img.to_rgba8())
+                    DynamicImage::ImageRgba8(img.into_rgba8())
                 } else {
-                    DynamicImage::ImageRgb8(img.to_rgb8())
+                    DynamicImage::ImageRgb8(img.into_rgb8())
                 };
                 bmp.write_to(&mut writer, ImageFormat::Bmp)
                     .map_err(VertexError::Image)?;
@@ -251,14 +252,14 @@ impl Converter for PureRustImageConverter {
                 let ico_img = if img.width() > 256 || img.height() > 256 {
                     resize_with_alpha(&img, 256, 256)
                 } else {
-                    img.clone()
+                    img
                 };
                 let file = File::create(output).map_err(|e| VertexError::Io {
                     path: output.to_path_buf(),
                     source: e,
                 })?;
                 let mut writer = BufWriter::new(file);
-                DynamicImage::ImageRgba8(ico_img.to_rgba8())
+                DynamicImage::ImageRgba8(ico_img.into_rgba8())
                     .write_to(&mut writer, ImageFormat::Ico)
                     .map_err(VertexError::Image)?;
             }
@@ -275,7 +276,7 @@ impl Converter for PureRustImageConverter {
                 // GIF supports only binary transparency. The encoder treats
                 // every nonzero alpha as opaque, exposing nearly invisible
                 // PNG edge pixels. Choose the cutoff explicitly instead.
-                let mut rgba = img.to_rgba8();
+                let mut rgba = img.into_rgba8();
                 for pixel in rgba.pixels_mut() {
                     if pixel[3] < opts.gif_alpha_threshold.max(1) {
                         pixel.0 = [0, 0, 0, 0];
@@ -303,5 +304,26 @@ impl Converter for PureRustImageConverter {
         cancel.check()?;
         progress(1.0);
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn jpeg_flatten_preserves_rgb_and_composites_alpha() {
+        let rgb = RgbImage::from_pixel(2, 1, Rgb([17, 89, 201]));
+        assert_eq!(
+            flatten_on_background(DynamicImage::ImageRgb8(rgb.clone()), [255; 3]),
+            rgb
+        );
+        let rgba = image::RgbaImage::from_fn(3, 1, |x, _| {
+            image::Rgba([20, 100, 200, [0, 128, 255][x as usize]])
+        });
+        let result = flatten_on_background(DynamicImage::ImageRgba8(rgba), [255; 3]);
+        assert_eq!(result.get_pixel(0, 0).0, [255; 3]);
+        assert_eq!(result.get_pixel(1, 0).0, [137, 177, 227]);
+        assert_eq!(result.get_pixel(2, 0).0, [20, 100, 200]);
     }
 }

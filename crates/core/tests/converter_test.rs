@@ -319,3 +319,56 @@ fn test_ffmpeg_video_conversion_and_audio_extraction() {
     );
     assert!(out_mp4_compressed.metadata().unwrap().len() > 100);
 }
+
+#[test]
+fn batch_targets_only_queries_distinct_formats() {
+    use std::sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    };
+    use vertex_core::{Availability, Converter};
+    struct CountingConverter(Arc<AtomicUsize>);
+    impl Converter for CountingConverter {
+        fn name(&self) -> &'static str {
+            "counting"
+        }
+        fn sources(&self) -> &[Format] {
+            &[Format::Png, Format::Jpg]
+        }
+        fn targets(&self, from: Format) -> Vec<Format> {
+            self.0.fetch_add(1, Ordering::Relaxed);
+            if from == Format::Png {
+                vec![Format::Webp, Format::Bmp]
+            } else {
+                vec![Format::Webp]
+            }
+        }
+        fn available(&self) -> Availability {
+            Availability::Ok
+        }
+        fn convert(
+            &self,
+            _: &std::path::Path,
+            _: &std::path::Path,
+            _: &Options,
+            _: &dyn Fn(f32),
+            _: &CancelToken,
+        ) -> vertex_core::Result<()> {
+            unreachable!()
+        }
+    }
+    let calls = Arc::new(AtomicUsize::new(0));
+    let mut registry = Registry::new();
+    registry.register(Arc::new(CountingConverter(calls.clone())));
+    let mut formats = vec![Format::Png; 10_000];
+    formats.push(Format::Jpg);
+    assert_eq!(
+        registry.batch_targets(&formats),
+        vec![(Format::Webp, Availability::Ok)]
+    );
+    assert_eq!(calls.load(Ordering::Relaxed), 2);
+    assert!(registry.batch_targets(&[]).is_empty());
+    assert!(registry
+        .batch_targets(&[Format::Png, Format::Pdf])
+        .is_empty());
+}

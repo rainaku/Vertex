@@ -76,21 +76,25 @@ pub fn set_app_language(
 
 #[tauri::command]
 pub async fn detect_file(path: String) -> Result<FormatInfo, String> {
-    let p = PathBuf::from(&path);
-    let fmt = detect_format(&p).map_err(|e| e.to_string())?;
-    let filename = p
-        .file_name()
-        .and_then(|s| s.to_str())
-        .unwrap_or("unknown")
-        .to_string();
+    tokio::task::spawn_blocking(move || {
+        let p = PathBuf::from(&path);
+        let fmt = detect_format(&p).map_err(|e| e.to_string())?;
+        let filename = p
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("unknown")
+            .to_string();
 
-    Ok(FormatInfo {
-        format: fmt,
-        label: fmt.label().to_string(),
-        extension: fmt.extension().to_string(),
-        category: fmt.category(),
-        filename,
+        Ok(FormatInfo {
+            format: fmt,
+            label: fmt.label().to_string(),
+            extension: fmt.extension().to_string(),
+            category: fmt.category(),
+            filename,
+        })
     })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -125,51 +129,56 @@ pub async fn get_batch_info(
     paths: Vec<String>,
     state: tauri::State<'_, AppState>,
 ) -> Result<BatchInfo, String> {
-    let mut files = Vec::new();
-    let mut formats = Vec::new();
+    let registry = state.registry.clone();
+    tokio::task::spawn_blocking(move || {
+        let mut files = Vec::with_capacity(paths.len());
+        let mut formats = Vec::with_capacity(paths.len());
 
-    for p_str in &paths {
-        let p = PathBuf::from(p_str);
-        let fmt = detect_format(&p).map_err(|e| format!("{}: {}", p_str, e))?;
-        let filename = p
-            .file_name()
-            .and_then(|s| s.to_str())
-            .unwrap_or("unknown")
-            .to_string();
+        for p_str in &paths {
+            let p = PathBuf::from(p_str);
+            let fmt = detect_format(&p).map_err(|e| format!("{}: {}", p_str, e))?;
+            let filename = p
+                .file_name()
+                .and_then(|s| s.to_str())
+                .unwrap_or("unknown")
+                .to_string();
 
-        files.push(FormatInfo {
-            format: fmt,
-            label: fmt.label().to_string(),
-            extension: fmt.extension().to_string(),
-            category: fmt.category(),
-            filename,
-        });
-        formats.push(fmt);
-    }
-
-    let common = state.registry.batch_targets(&formats);
-    let common_targets = common
-        .into_iter()
-        .map(|(fmt, avail)| {
-            let (available, reason) = match avail {
-                Availability::Ok => (true, None),
-                Availability::Missing(r) => (false, Some(r)),
-            };
-            TargetFormatInfo {
+            files.push(FormatInfo {
                 format: fmt,
                 label: fmt.label().to_string(),
                 extension: fmt.extension().to_string(),
                 category: fmt.category(),
-                available,
-                reason,
-            }
-        })
-        .collect();
+                filename,
+            });
+            formats.push(fmt);
+        }
 
-    Ok(BatchInfo {
-        files,
-        common_targets,
+        let common = registry.batch_targets(&formats);
+        let common_targets = common
+            .into_iter()
+            .map(|(fmt, avail)| {
+                let (available, reason) = match avail {
+                    Availability::Ok => (true, None),
+                    Availability::Missing(r) => (false, Some(r)),
+                };
+                TargetFormatInfo {
+                    format: fmt,
+                    label: fmt.label().to_string(),
+                    extension: fmt.extension().to_string(),
+                    category: fmt.category(),
+                    available,
+                    reason,
+                }
+            })
+            .collect();
+
+        Ok(BatchInfo {
+            files,
+            common_targets,
+        })
     })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -378,7 +387,8 @@ pub fn prepare_settings_window(app: AppHandle) -> Result<(), String> {
         win.set_size(tauri::Size::Logical(tauri::LogicalSize {
             width: 1080.0,
             height: 780.0,
-        })).map_err(|e| e.to_string())?;
+        }))
+        .map_err(|e| e.to_string())?;
         win.center().map_err(|e| e.to_string())?;
 
         #[cfg(target_os = "windows")]
@@ -388,7 +398,15 @@ pub fn prepare_settings_window(app: AppHandle) -> Result<(), String> {
                 SWP_SHOWWINDOW,
             };
             let hwnd = win.hwnd().map_err(|e| e.to_string())?.0 as _;
-            SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+            SetWindowPos(
+                hwnd,
+                HWND_TOPMOST,
+                0,
+                0,
+                0,
+                0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW,
+            );
             SetForegroundWindow(hwnd);
         }
 
@@ -405,9 +423,8 @@ pub fn restore_wheel_window(app: AppHandle) -> Result<(), String> {
         win.set_size(tauri::Size::Logical(tauri::LogicalSize {
             width: 480.0,
             height: 480.0,
-        })).map_err(|e| e.to_string())?;
+        }))
+        .map_err(|e| e.to_string())?;
     }
     Ok(())
 }
-
-
