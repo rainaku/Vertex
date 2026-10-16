@@ -1,6 +1,8 @@
 <script lang="ts">
   import { t } from './i18n';
-  import { CheckCircle2, FolderOpen, X } from 'lucide-svelte';
+  import CheckCircleIcon from 'phosphor-svelte/lib/CheckCircleIcon';
+  import FolderOpenIcon from 'phosphor-svelte/lib/FolderOpenIcon';
+  import XIcon from 'phosphor-svelte/lib/XIcon';
   import { revealInExplorer } from './tauri-bridge';
 
   export let message: string = '';
@@ -19,7 +21,7 @@
   <div class="toast-container" role="status" aria-live="polite">
     <div class="toast-glass">
       <div class="icon-wrap">
-        <CheckCircle2 size={20} />
+        <CheckCircleIcon size={20} weight="fill" aria-hidden="true" />
       </div>
       <div class="toast-content">
         <div class="toast-title">{$t("Chuyển đổi hoàn tất")}</div>
@@ -27,11 +29,11 @@
       </div>
       <div class="toast-actions">
         <button class="btn-reveal" on:click={handleReveal} title={$t("Mở thư mục chứa file")}>
-          <FolderOpen size={16} />
+          <FolderOpenIcon size={16} weight="fill" aria-hidden="true" />
           <span>{$t("Mở thư mục")}</span>
         </button>
         <button class="btn-close" on:click={onClose} aria-label={$t("Đóng thông báo")}>
-          <X size={16} />
+          <XIcon size={16} weight="bold" aria-hidden="true" />
         </button>
       </div>
     </div>

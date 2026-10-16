@@ -101,236 +101,179 @@ impl Registry {
         list
     }
 
-    /// Find direct converter for a single hop
+    /// Only select engines that are currently usable, including fallbacks.
     pub fn find_converter(&self, from: Format, to: Format) -> Option<Arc<dyn Converter>> {
-        for conv in &self.converters {
-            if conv.sources().contains(&from) && conv.targets(from).contains(&to) {
-                return Some(conv.clone());
-            }
-        }
-        None
+        self.converters
+            .iter()
+            .find(|conv| {
+                conv.sources().contains(&from)
+                    && conv.targets(from).contains(&to)
+                    && conv.available().is_ok()
+            })
+            .cloned()
     }
 
-    /// Execute conversion from input file to target format
     pub fn convert(
         &self,
         input: &Path,
-        target_format: Format,
+        target: Format,
         opts: &Options,
         progress: &dyn Fn(f32),
         cancel: &CancelToken,
     ) -> Result<PathBuf> {
         cancel.check()?;
-        let from_format = detect_format(input)?;
-        if self.find_converter(from_format, target_format).is_none()
-            && (from_format == target_format
-                || self.find_path(from_format, target_format).is_none())
-        {
-            return Err(VertexError::NoConversionRoute {
-                from: from_format.to_string(),
-                to: target_format.to_string(),
-            });
-        }
-        let destination = resolve_target_path(input, target_format, opts)?;
-        let staged = tempfile::Builder::new()
-            .prefix(".vertex-")
-            .suffix(&format!(".{}", target_format.extension()))
-            .tempfile_in(destination.parent().unwrap_or(Path::new(".")))
-            .map_err(|source| VertexError::Io {
-                path: destination.clone(),
-                source,
-            })?
-            .into_temp_path();
-        self.convert_staged(
-            input,
-            target_format,
-            opts,
-            progress,
-            cancel,
-            staged.to_path_buf(),
-        )?;
-        cancel.check()?;
-        // Publish only after success. Cancellation drops the private temporary
-        // output, leaving both the source and any existing destination intact.
-        let result = if matches!(
-            opts.collision_policy,
-            crate::options::CollisionPolicy::Overwrite
-        ) {
-            staged.persist(&destination)
+        let opts = opts.normalized();
+        let from = detect_format(input)?;
+        let route = if let Some(conv) = self.find_converter(from, target) {
+            vec![(target, conv)]
+        } else if let Some(path) = self.find_path(from, target) {
+            path.into_iter()
+                .map(|(a, b)| {
+                    self.find_converter(a, b)
+                        .map(|conv| (b, conv))
+                        .ok_or_else(|| {
+                            VertexError::EngineMissing(format!("Engine for {a} -> {b} disappeared"))
+                        })
+                })
+                .collect::<Result<Vec<_>>>()?
         } else {
-            staged.persist_noclobber(&destination)
-        };
-        result.map_err(|error| VertexError::Io {
-            path: destination.clone(),
-            source: error.error,
-        })?;
-        Ok(destination)
-    }
-
-    fn convert_staged(
-        &self,
-        input: &Path,
-        target_format: Format,
-        opts: &Options,
-        progress: &dyn Fn(f32),
-        cancel: &CancelToken,
-        output_path: PathBuf,
-    ) -> Result<PathBuf> {
-        let from_format = detect_format(input)?;
-
-        // Find direct converter
-        if let Some(conv) = self.find_converter(from_format, target_format) {
-            match conv.available() {
-                Availability::Ok => {
-                    conv.convert(input, &output_path, opts, progress, cancel)?;
-                    return Ok(output_path);
-                }
-                Availability::Missing(reason) => {
-                    return Err(VertexError::EngineMissing(reason));
-                }
-            }
-        }
-
-        // Re-encoding needs a real converter; an empty BFS path must not
-        // report success for an output file that was never created.
-        if from_format == target_format {
-            return Err(VertexError::NoConversionRoute {
-                from: from_format.to_string(),
-                to: target_format.to_string(),
-            });
-        }
-
-        // Multi-hop path search (BFS)
-        if let Some(path) = self.find_path(from_format, target_format) {
-            let mut current_input = input.to_path_buf();
-            let total_steps = path.len();
-
-            let temp_guard = tempfile::Builder::new()
-                .prefix("vertex-")
-                .tempdir()
-                .map_err(|source| VertexError::Io {
-                    path: std::env::temp_dir(),
-                    source,
-                })?;
-            let temp_dir = temp_guard.path();
-
-            for (idx, (step_from, step_to)) in path.iter().enumerate() {
-                cancel.check()?;
-
-                let is_last = idx == total_steps - 1;
-                let step_output = if is_last {
-                    output_path.clone()
-                } else {
-                    temp_dir.join(format!(
-                        "step_{}_{}.{}",
-                        idx,
-                        stem(input),
-                        step_to.extension()
-                    ))
-                };
-
-                let conv = self.find_converter(*step_from, *step_to).ok_or_else(|| {
-                    VertexError::NoConversionRoute {
-                        from: step_from.to_string(),
-                        to: step_to.to_string(),
-                    }
-                })?;
-
-                let step_start = idx as f32 / total_steps as f32;
-                let step_weight = 1.0 / total_steps as f32;
-
-                conv.convert(
-                    &current_input,
-                    &step_output,
-                    opts,
-                    &|p| progress(step_start + p * step_weight),
-                    cancel,
-                )?;
-
-                // Clean up previous temporary file if it was intermediate
-                if idx > 0 && current_input.starts_with(temp_dir) {
-                    let _ = std::fs::remove_file(&current_input);
-                }
-
-                current_input = step_output;
-            }
-
-            return Ok(output_path);
-        }
-
-        Err(VertexError::NoConversionRoute {
-            from: from_format.to_string(),
-            to: target_format.to_string(),
-        })
-    }
-
-    /// Breadth-First-Search for multi-hop conversion
-    fn find_path(&self, from: Format, to: Format) -> Option<Vec<(Format, Format)>> {
-        let mut queue: VecDeque<(Format, Vec<(Format, Format)>)> = VecDeque::new();
-        let mut visited: HashSet<Format> = HashSet::new();
-
-        queue.push_back((from, Vec::new()));
-        visited.insert(from);
-
-        while let Some((curr, path)) = queue.pop_front() {
-            if curr == to {
-                return Some(path);
-            }
-
             for conv in &self.converters {
-                if conv.available().is_ok() && conv.sources().contains(&curr) {
-                    for next in conv.targets(curr).into_iter() {
-                        if !visited.contains(&next) {
-                            visited.insert(next);
-                            let mut next_path = path.clone();
-                            next_path.push((curr, next));
-                            queue.push_back((next, next_path));
+                if conv.sources().contains(&from) && conv.targets(from).contains(&target) {
+                    if let Availability::Missing(reason) = conv.available() {
+                        return Err(VertexError::EngineMissing(reason));
+                    }
+                }
+            }
+            return Err(VertexError::NoConversionRoute {
+                from: from.to_string(),
+                to: target.to_string(),
+            });
+        };
+        let mut destination = resolve_target_path(input, target, &opts)?;
+        let mut staged = crate::path_utils::stage_output(&destination)?;
+        let intermediate = tempfile::tempdir().map_err(|source| VertexError::Io {
+            path: std::env::temp_dir(),
+            source,
+        })?;
+        let mut current = input.to_path_buf();
+        let mut current_format = from;
+        let count = route.len();
+        for (index, (format, conv)) in route.into_iter().enumerate() {
+            cancel.check()?;
+            let output = if index + 1 == count {
+                staged.to_path_buf()
+            } else {
+                intermediate
+                    .path()
+                    .join(format!("step-{index}.{}", format.extension()))
+            };
+            conv.convert_detected(
+                crate::converter::DetectedInput {
+                    path: &current,
+                    format: current_format,
+                },
+                &output,
+                &opts,
+                &|p| progress((index as f32 + p.clamp(0.0, 1.0)) / count as f32),
+                cancel,
+            )?;
+            current = output;
+            current_format = format;
+        }
+        cancel.check()?;
+        // No empty placeholders or global lock: atomically publish the completed
+        // file, retrying a name collision without re-encoding.
+        loop {
+            crate::path_utils::ensure_distinct(input, &destination)?;
+            let result = if matches!(
+                opts.collision_policy,
+                crate::options::CollisionPolicy::Overwrite
+            ) {
+                staged.persist(&destination)
+            } else {
+                staged.persist_noclobber(&destination)
+            };
+            match result {
+                Ok(()) => return Ok(destination),
+                Err(error)
+                    if error.error.kind() == std::io::ErrorKind::AlreadyExists
+                        && matches!(
+                            opts.collision_policy,
+                            crate::options::CollisionPolicy::RenameWithSuffix
+                        ) =>
+                {
+                    staged = error.path;
+                    cancel.check()?;
+                    destination = resolve_target_path(input, target, &opts)?;
+                }
+                Err(error) => {
+                    return Err(VertexError::Io {
+                        path: destination,
+                        source: error.error,
+                    })
+                }
+            }
+        }
+    }
+
+    /// BFS stores predecessor edges rather than cloning a path per visit.
+    fn find_path(&self, from: Format, to: Format) -> Option<Vec<(Format, Format)>> {
+        if from == to {
+            return None;
+        }
+        let mut queue = VecDeque::from([from]);
+        let mut predecessors = HashMap::from([(from, from)]);
+        let engines: Vec<_> = self
+            .converters
+            .iter()
+            .filter(|c| c.available().is_ok())
+            .collect();
+        while let Some(current) = queue.pop_front() {
+            for conv in &engines {
+                if !conv.sources().contains(&current) {
+                    continue;
+                }
+                for next in conv.targets(current) {
+                    if let std::collections::hash_map::Entry::Vacant(entry) =
+                        predecessors.entry(next)
+                    {
+                        entry.insert(current);
+                        if next == to {
+                            let mut path = Vec::new();
+                            let mut at = to;
+                            while at != from {
+                                let previous = predecessors[&at];
+                                path.push((previous, at));
+                                at = previous;
+                            }
+                            path.reverse();
+                            return Some(path);
                         }
+                        queue.push_back(next);
                     }
                 }
             }
         }
-
         None
     }
-}
-
-fn stem(path: &Path) -> &str {
-    path.file_stem().and_then(|s| s.to_str()).unwrap_or("file")
 }
 
 fn sort_targets_by_affinity(
     targets: &mut [(Format, Availability)],
-    preferred_category: crate::format::Category,
+    preferred: crate::format::Category,
 ) {
-    targets.sort_by(|(a, _), (b, _)| {
-        // Keep each category together; video inputs show video, then audio.
-        let category_rank = |format: Format| {
-            if format.category() == preferred_category {
+    targets.sort_unstable_by_key(|(format, _)| {
+        (
+            if format.category() == preferred {
                 0
             } else if format.category() == crate::format::Category::Audio {
                 1
             } else {
                 2
-            }
-        };
-        let category_order = category_rank(*a).cmp(&category_rank(*b));
-        if category_order != std::cmp::Ordering::Equal {
-            return category_order;
-        }
-
-        let a_same = a.category() == preferred_category;
-        let b_same = b.category() == preferred_category;
-
-        match (a_same, b_same) {
-            (true, false) => std::cmp::Ordering::Less,
-            (false, true) => std::cmp::Ordering::Greater,
-            _ => {
-                let p_a = format_priority(*a);
-                let p_b = format_priority(*b);
-                p_a.cmp(&p_b).then_with(|| a.label().cmp(b.label()))
-            }
-        }
+            },
+            format_priority(*format),
+            format.label(),
+        )
     });
 }
 

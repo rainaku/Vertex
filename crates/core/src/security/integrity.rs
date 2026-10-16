@@ -21,12 +21,22 @@ pub struct AppIntegrityService;
 impl AppIntegrityService {
     /// Computes the SHA-256 hash of a file as a lowercase hex string.
     pub fn compute_file_sha256(path: &Path) -> std::io::Result<String> {
-        let mut file = File::open(path)?;
+        let mut open = std::fs::OpenOptions::new();
+        open.read(true);
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::OpenOptionsExt;
+            open.custom_flags(0x08000000); // FILE_FLAG_SEQUENTIAL_SCAN
+        }
+        let mut file = open.open(path)?;
         let mut hasher = Sha256::new();
-        let mut buffer = [0u8; 64 * 1024];
+        let mut buffer = vec![0u8; 64 * 1024];
 
         loop {
-            let bytes_read = file.read(&mut buffer)?;
+            let bytes_read = match file.read(&mut buffer) {
+                Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+                result => result?,
+            };
             if bytes_read == 0 {
                 break;
             }
@@ -47,16 +57,24 @@ impl AppIntegrityService {
 
         #[cfg(target_os = "windows")]
         {
-            let zone_stream_path = format!("{}:Zone.Identifier", file_path.display());
-            let Ok(content) = std::fs::read_to_string(&zone_stream_path) else {
+            let mut zone_stream_path = file_path.as_os_str().to_os_string();
+            zone_stream_path.push(":Zone.Identifier");
+            let Ok(stream) = File::open(&zone_stream_path) else {
                 // No Mark of the Web stream present (e.g. local build, unblocked, or non-NTFS).
                 return (true, None);
             };
 
+            let mut content = String::new();
+            if stream.take(65537).read_to_string(&mut content).is_err() || content.len() > 65536 {
+                return (false, Some("Invalid Zone.Identifier".into()));
+            }
             let (host_url, referrer_url) = Self::parse_zone_identifier(&content);
 
             if let Some(host) = host_url {
-                if !host.is_empty() && !Self::is_trusted_download_domain(&host) {
+                if !host.is_empty()
+                    && !host.eq_ignore_ascii_case("about:internet")
+                    && !Self::is_trusted_download_domain(&host)
+                {
                     return (false, Some(host));
                 }
             }
@@ -78,10 +96,12 @@ impl AppIntegrityService {
 
         for line in content.lines() {
             let trimmed = line.trim();
-            if let Some(val) = trimmed.strip_prefix("HostUrl=") {
-                host_url = Some(val.trim().to_string());
-            } else if let Some(val) = trimmed.strip_prefix("ReferrerUrl=") {
-                referrer_url = Some(val.trim().to_string());
+            if let Some((key, val)) = trimmed.split_once('=') {
+                if key.trim().eq_ignore_ascii_case("HostUrl") {
+                    host_url = Some(val.trim().to_string());
+                } else if key.trim().eq_ignore_ascii_case("ReferrerUrl") {
+                    referrer_url = Some(val.trim().to_string());
+                }
             }
         }
 

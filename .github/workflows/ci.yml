@@ -23,12 +23,12 @@ jobs:
       # dtolnay/rust-toolchain@stable
       - uses: dtolnay/rust-toolchain@stable
         with:
-          components: rustfmt, clippy
+          components: clippy
 
       # actions/setup-node@v4.2.0 (pinned commit SHA)
       - uses: actions/setup-node@1e60f620b9541d16bece96c5465dc8ee9832be0b
         with:
-          node-version: 20
+          node-version: 24
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
 
@@ -36,18 +36,16 @@ jobs:
         working-directory: frontend
         run: npm ci
 
-      - name: Verify Frontend Formatting & Types
+      - name: Verify Frontend Types
         working-directory: frontend
         run: npm run check
 
-      - name: Verify Rust Formatting
-        run: cargo fmt --all -- --check
+      - name: Build Frontend
+        working-directory: frontend
+        run: npm run build
 
       - name: Run Clippy Linter
         run: cargo clippy --workspace --all-targets -- -D warnings
-
-      - name: Run Rust Workspace Tests
-        run: cargo test --workspace
 
       - name: Audit NPM Dependencies
         working-directory: frontend

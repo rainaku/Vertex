@@ -1,185 +1,295 @@
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::thread;
-use std::time::Duration;
-use tauri::{AppHandle, Emitter, Manager, PhysicalPosition};
-use tracing::info;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use tauri::{AppHandle, Emitter, Manager};
 
-#[cfg(target_os = "windows")]
-use windows_sys::Win32::Foundation::POINT;
-#[cfg(target_os = "windows")]
-use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
-    GetAsyncKeyState, VK_ESCAPE, VK_LBUTTON, VK_SHIFT,
-};
-#[cfg(target_os = "windows")]
-use windows_sys::Win32::UI::WindowsAndMessaging::GetCursorPos;
+static UI_BUSY: AtomicBool = AtomicBool::new(false);
+static ACTIVE_JOBS: AtomicUsize = AtomicUsize::new(0);
+static SETTINGS_OPEN: AtomicBool = AtomicBool::new(false);
+#[cfg(windows)]
+static DROP_SESSION: std::sync::Mutex<crate::drag_gesture::DropSession> =
+    std::sync::Mutex::new(crate::drag_gesture::DropSession::new());
 
-/// Global flag indicating whether a conversion is currently running,
-/// so the background watcher doesn't hide the window while converting.
-pub static IS_CONVERTING: AtomicBool = AtomicBool::new(false);
-
-pub fn set_is_converting(val: bool) {
-    IS_CONVERTING.store(val, Ordering::SeqCst);
-}
-
-pub fn get_is_converting() -> bool {
-    IS_CONVERTING.load(Ordering::SeqCst)
-}
-
-/// Starts the global drag & drop detector thread.
-pub fn start_drag_detector(app: AppHandle) {
-    #[cfg(target_os = "windows")]
-    {
-        thread::spawn(move || {
-            info!("Windows global Shift+Drag detector thread started");
-
-            #[derive(Debug, PartialEq)]
-            enum DragState {
-                Idle,
-                PotentialDrag { start_x: i32, start_y: i32 },
-                Dragging,
+#[cfg(windows)]
+pub fn on_native_drag_event(app: &AppHandle, event: &tauri::DragDropEvent) {
+    let close = {
+        let mut session = DROP_SESSION.lock().unwrap_or_else(|p| p.into_inner());
+        match event {
+            tauri::DragDropEvent::Enter { .. } | tauri::DragDropEvent::Over { .. } => {
+                session.enter();
+                false
             }
+            tauri::DragDropEvent::Drop { .. } => {
+                session.finish();
+                false
+            }
+            tauri::DragDropEvent::Leave => session.leave(),
+            _ => false,
+        }
+    };
+    if close {
+        let _ = app.emit("shift_drag_end", ());
+    }
+}
 
-            let mut state = DragState::Idle;
+pub fn set_is_converting(value: bool) {
+    UI_BUSY.store(value, Ordering::Relaxed);
+}
+pub fn get_is_converting() -> bool {
+    UI_BUSY.load(Ordering::Relaxed) || ACTIVE_JOBS.load(Ordering::Relaxed) > 0
+}
+pub fn begin_job() {
+    ACTIVE_JOBS.fetch_add(1, Ordering::Relaxed);
+}
+pub fn finish_job() {
+    ACTIVE_JOBS.fetch_sub(1, Ordering::Relaxed);
+}
+pub fn set_settings_open(value: bool) {
+    SETTINGS_OPEN.store(value, Ordering::Relaxed);
+}
 
-            loop {
-                thread::sleep(Duration::from_millis(15));
+pub fn settings_open() -> bool {
+    SETTINGS_OPEN.load(Ordering::Relaxed)
+}
 
-                // 1. Check ESC key to cancel immediately
-                let esc_pressed =
-                    unsafe { (GetAsyncKeyState(VK_ESCAPE as i32) as u16 & 0x8000) != 0 };
-                if esc_pressed {
-                    if state != DragState::Idle {
-                        state = DragState::Idle;
-                        let ui_app = app.clone();
-                        if let Err(error) = app.run_on_main_thread(move || {
-                            let _ = ui_app.emit("drag_cancelled", ());
-                            // The frontend completes its exit animation before
-                            // asking Rust to hide the native surface.
-                        }) {
-                            tracing::warn!(%error, "Could not schedule wheel cancellation");
-                        }
-                    }
-                    continue;
+#[cfg(windows)]
+mod windows_drag {
+    use super::*;
+    use std::sync::{mpsc, OnceLock};
+    use windows_sys::Win32::Foundation::{LPARAM, LRESULT, POINT, WPARAM};
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
+        GetAsyncKeyState, VK_ESCAPE, VK_LBUTTON, VK_LSHIFT, VK_RBUTTON, VK_RSHIFT, VK_SHIFT,
+    };
+    use windows_sys::Win32::UI::WindowsAndMessaging::*;
+
+    #[derive(Clone, Copy)]
+    enum Event {
+        Down(POINT),
+        Move(POINT),
+        Up,
+        Escape,
+    }
+    static EVENTS: OnceLock<mpsc::Sender<Event>> = OnceLock::new();
+    static TRACK_MOVES: AtomicBool = AtomicBool::new(false);
+
+    unsafe extern "system" fn mouse_hook(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+        if code >= 0 {
+            let primary_right = GetSystemMetrics(SM_SWAPBUTTON) != 0;
+            let down = if primary_right {
+                WM_RBUTTONDOWN
+            } else {
+                WM_LBUTTONDOWN
+            };
+            let up = if primary_right {
+                WM_RBUTTONUP
+            } else {
+                WM_LBUTTONUP
+            };
+            let message = wparam as u32;
+            let point = (*(lparam as *const MSLLHOOKSTRUCT)).pt;
+            let event =
+                if message == down && (GetAsyncKeyState(VK_SHIFT as i32) as u16 & 0x8000) != 0 {
+                    TRACK_MOVES.store(true, Ordering::Relaxed);
+                    Some(Event::Down(point))
+                } else if message == up {
+                    TRACK_MOVES.store(false, Ordering::Relaxed);
+                    Some(Event::Up)
+                } else if message == WM_MOUSEMOVE && TRACK_MOVES.load(Ordering::Relaxed) {
+                    Some(Event::Move(point))
+                } else {
+                    None
+                };
+            if let (Some(sender), Some(event)) = (EVENTS.get(), event) {
+                let _ = sender.send(event);
+            }
+        }
+        CallNextHookEx(std::ptr::null_mut(), code, wparam, lparam)
+    }
+
+    unsafe extern "system" fn keyboard_hook(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+        if code >= 0 && matches!(wparam as u32, WM_KEYDOWN | WM_SYSKEYDOWN) {
+            let key = (*(lparam as *const KBDLLHOOKSTRUCT)).vkCode;
+            if key == u32::from(VK_ESCAPE) {
+                TRACK_MOVES.store(false, Ordering::Relaxed);
+                if let Some(sender) = EVENTS.get() {
+                    let _ = sender.send(Event::Escape);
                 }
-
-                // 2. Check Shift key and Left Mouse Button
-                let shift_down =
-                    unsafe { (GetAsyncKeyState(VK_SHIFT as i32) as u16 & 0x8000) != 0 };
-                let lbutton_down =
-                    unsafe { (GetAsyncKeyState(VK_LBUTTON as i32) as u16 & 0x8000) != 0 };
-
-                let mut pt = POINT { x: 0, y: 0 };
-                unsafe { GetCursorPos(&mut pt) };
-
-                match state {
-                    DragState::Idle => {
-                        // User started holding Shift + Left Button
-                        if shift_down && lbutton_down {
-                            state = DragState::PotentialDrag {
-                                start_x: pt.x,
-                                start_y: pt.y,
-                            };
-                        }
+            } else if [VK_SHIFT, VK_LSHIFT, VK_RSHIFT]
+                .iter()
+                .any(|v| key == u32::from(*v))
+            {
+                let primary = if GetSystemMetrics(SM_SWAPBUTTON) != 0 {
+                    VK_RBUTTON
+                } else {
+                    VK_LBUTTON
+                };
+                let mut point = POINT { x: 0, y: 0 };
+                if GetAsyncKeyState(primary as i32) as u16 & 0x8000 != 0
+                    && GetCursorPos(&mut point) != 0
+                {
+                    TRACK_MOVES.store(true, Ordering::Relaxed);
+                    if let Some(sender) = EVENTS.get() {
+                        let _ = sender.send(Event::Down(point));
                     }
-                    DragState::PotentialDrag { start_x, start_y } => {
-                        if !shift_down || !lbutton_down {
-                            // Released before moving enough (regular Shift+Click, do not trigger)
-                            state = DragState::Idle;
-                        } else {
-                            let dx = (pt.x - start_x) as f32;
-                            let dy = (pt.y - start_y) as f32;
-                            let dist = (dx * dx + dy * dy).sqrt();
+                }
+            }
+        }
+        CallNextHookEx(std::ptr::null_mut(), code, wparam, lparam)
+    }
 
-                            // Drag threshold: 8 pixels of movement
-                            if dist >= 8.0 {
-                                state = DragState::Dragging;
-                                info!("Shift+Drag detected at ({}, {})! Positioning Vertex overlay...", pt.x, pt.y);
+    fn blocked(app: &AppHandle) -> bool {
+        if get_is_converting() || SETTINGS_OPEN.load(Ordering::Relaxed) {
+            return true;
+        }
+        unsafe {
+            let foreground = GetForegroundWindow();
+            if foreground.is_null() || IsIconic(foreground) != 0 {
+                return false;
+            }
+            if app
+                .get_webview_window("main")
+                .and_then(|w| w.hwnd().ok())
+                .is_some_and(|h| std::ptr::eq(h.0, foreground))
+            {
+                return true;
+            }
+            let monitor = windows_sys::Win32::Graphics::Gdi::MonitorFromWindow(
+                foreground,
+                windows_sys::Win32::Graphics::Gdi::MONITOR_DEFAULTTONEAREST,
+            );
+            let mut info: windows_sys::Win32::Graphics::Gdi::MONITORINFO = std::mem::zeroed();
+            info.cbSize = std::mem::size_of_val(&info) as u32;
+            let mut rect = std::mem::zeroed();
+            if windows_sys::Win32::Graphics::Gdi::GetMonitorInfoW(monitor, &mut info) == 0
+                || GetWindowRect(foreground, &mut rect) == 0
+            {
+                return false;
+            }
+            // Borderless/exclusive fullscreen. Exempt the Explorer desktop.
+            let mut class = [0; 64];
+            let len = GetClassNameW(foreground, class.as_mut_ptr(), class.len() as i32);
+            let class = String::from_utf16_lossy(&class[..len.max(0) as usize]);
+            !matches!(class.as_str(), "Progman" | "WorkerW")
+                && GetWindowLongW(foreground, GWL_STYLE) as u32 & WS_CAPTION == 0
+                && rect.left <= info.rcMonitor.left
+                && rect.top <= info.rcMonitor.top
+                && rect.right >= info.rcMonitor.right
+                && rect.bottom >= info.rcMonitor.bottom
+        }
+    }
 
-                                if let Some(win) = app.get_webview_window("main") {
-                                    let size = win
-                                        .outer_size()
-                                        .unwrap_or(tauri::PhysicalSize::new(480, 480));
-                                    let w = size.width as i32;
-                                    let h = size.height as i32;
-
-                                    // Position menu on the side the user is dragging towards:
-                                    // If dx >= 0 (dragged right): menu appears on the RIGHT of the cursor
-                                    // If dx < 0 (dragged left): menu appears on the LEFT of the cursor
-                                    // Move wheel further to the side so the dragged file thumbnail doesn't overlap
-                                    // Cursor is placed 24px inside the window edge for instant OLE DragEnter
-                                    let cursor_margin = 24;
-                                    let mut target_x = if dx >= 0.0 {
-                                        pt.x - cursor_margin
-                                    } else {
-                                        pt.x - (w - cursor_margin)
-                                    };
-                                    let mut target_y = pt.y - (h / 2);
-
-                                    // Clamp to screen bounds so it never clips off display
-                                    unsafe {
-                                        use windows_sys::Win32::UI::WindowsAndMessaging::GetSystemMetrics;
-                                        let min_x = GetSystemMetrics(76); // SM_XVIRTUALSCREEN
-                                        let max_x = min_x + GetSystemMetrics(78) - w; // SM_CXVIRTUALSCREEN
-                                        let min_y = GetSystemMetrics(77); // SM_YVIRTUALSCREEN
-                                        let max_y = min_y + GetSystemMetrics(79) - h; // SM_CYVIRTUALSCREEN
-                                        if max_x > min_x {
-                                            target_x = target_x.clamp(min_x, max_x);
-                                        }
-                                        if max_y > min_y {
-                                            target_y = target_y.clamp(min_y, max_y);
+    pub fn start(app: AppHandle) {
+        let (sender, receiver) = mpsc::channel();
+        if EVENTS.set(sender).is_err() {
+            return;
+        }
+        std::thread::spawn(move || {
+            let mut gesture = crate::drag_gesture::DragGesture::default();
+            for event in receiver {
+                use crate::drag_gesture::Action;
+                let action = match event {
+                    Event::Down(point) => {
+                        gesture.press(point.x, point.y, !blocked(&app));
+                        Action::None
+                    }
+                    Event::Move(point) => gesture.motion(
+                        point.x,
+                        point.y,
+                        unsafe { GetAsyncKeyState(VK_SHIFT as i32) as u16 & 0x8000 } != 0
+                            && !blocked(&app),
+                    ),
+                    Event::Up => gesture.release(),
+                    Event::Escape => gesture.escape(),
+                };
+                TRACK_MOVES.store(gesture.needs_motion(), Ordering::Relaxed);
+                match action {
+                    Action::Show { right } => {
+                        let Event::Move(point) = event else {
+                            continue;
+                        };
+                        let ui_app = app.clone();
+                        let _ = app.run_on_main_thread(move || {
+                            if blocked(&ui_app) {
+                                return;
+                            }
+                            if let Some(win) = ui_app.get_webview_window("main") {
+                                DROP_SESSION
+                                    .lock()
+                                    .unwrap_or_else(|p| p.into_inner())
+                                    .begin();
+                                match crate::wheel_window::position_for_drag(&win, point, right) {
+                                    Ok(position) => {
+                                        if crate::wheel_window::show(&win, Some(position), false)
+                                            .is_ok()
+                                        {
+                                            let _ = ui_app.emit("shift_drag_start", ());
                                         }
                                     }
-
-                                    // Keep native style/visibility changes on the window's
-                                    // UI thread, before notifying the frontend of the drag.
-                                    let ui_window = win.clone();
-                                    let ui_app = app.clone();
-                                    if let Err(error) = win.run_on_main_thread(move || {
-                                        match crate::wheel_window::show(
-                                            &ui_window,
-                                            Some(PhysicalPosition::new(target_x, target_y)),
-                                            false,
-                                        ) {
-                                            Ok(()) => {
-                                                let _ = ui_app.emit("shift_drag_start", ());
-                                                let _ = ui_app.emit("ctrl_drag_start", ());
-                                            }
-                                            Err(error) => {
-                                                tracing::warn!(%error, "Could not show drag wheel");
-                                            }
-                                        }
-                                    }) {
-                                        tracing::warn!(%error, "Could not schedule drag wheel");
+                                    Err(error) => {
+                                        tracing::warn!(%error, "Could not position drag wheel")
                                     }
                                 }
                             }
-                        }
+                        });
                     }
-                    DragState::Dragging => {
-                        // The wheel stays open as long as the user is still dragging (Left Button down)
-                        // Shift is only used as the trigger/summon key.
-                        if !lbutton_down {
-                            state = DragState::Idle;
-                            info!("Left mouse button released, ending drag");
-                            // Use the same queue as show/cancel so a quick release
-                            // cannot reach the frontend before the start event.
-                            let ui_app = app.clone();
-                            if let Err(error) = app.run_on_main_thread(move || {
-                                let _ = ui_app.emit("shift_drag_end", ());
-                                let _ = ui_app.emit("ctrl_drag_end", ());
-                            }) {
-                                tracing::warn!(%error, "Could not schedule drag end");
+                    Action::End | Action::Cancel => {
+                        let ui_app = app.clone();
+                        let name = if action == Action::Cancel {
+                            "drag_cancelled"
+                        } else {
+                            "shift_drag_end"
+                        };
+                        let _ = app.run_on_main_thread(move || {
+                            let close = {
+                                let mut session =
+                                    DROP_SESSION.lock().unwrap_or_else(|p| p.into_inner());
+                                if action == Action::Cancel {
+                                    session.finish();
+                                    true
+                                } else {
+                                    session.release()
+                                }
+                            };
+                            if !close {
+                                return;
                             }
-                        }
+                            let _ = ui_app.emit(name, ());
+                        });
                     }
+                    Action::None => {}
                 }
             }
         });
+        std::thread::spawn(|| unsafe {
+            use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
+            let module = GetModuleHandleW(std::ptr::null());
+            let mouse = SetWindowsHookExW(WH_MOUSE_LL, Some(mouse_hook), module, 0);
+            let keyboard = SetWindowsHookExW(WH_KEYBOARD_LL, Some(keyboard_hook), module, 0);
+            if mouse.is_null() || keyboard.is_null() {
+                if !mouse.is_null() {
+                    UnhookWindowsHookEx(mouse);
+                }
+                if !keyboard.is_null() {
+                    UnhookWindowsHookEx(keyboard);
+                }
+                tracing::error!(
+                    "Could not install Shift+Drag hooks: {}",
+                    std::io::Error::last_os_error()
+                );
+                return;
+            }
+            let mut message = std::mem::zeroed();
+            while GetMessageW(&mut message, std::ptr::null_mut(), 0, 0) > 0 {
+                TranslateMessage(&message);
+                DispatchMessageW(&message);
+            }
+            UnhookWindowsHookEx(mouse);
+            UnhookWindowsHookEx(keyboard);
+        });
     }
+}
 
-    #[cfg(not(target_os = "windows"))]
-    {
-        let _ = app;
-        info!("Non-Windows OS: relying on native webview drag & drop events");
-    }
+pub fn start_drag_detector(app: AppHandle) {
+    #[cfg(windows)]
+    windows_drag::start(app);
+    #[cfg(not(windows))]
+    let _ = app;
 }

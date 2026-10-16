@@ -1,6 +1,7 @@
 <script lang="ts">
   import { t } from './i18n';
-  import { createPetalPath, getPetalCenter, hitTest } from './geometry';
+  import { onDestroy } from 'svelte';
+  import { createPetalPath, getPetalCenter, hitTestClient } from './geometry';
   import type { TargetFormatInfo } from './types';
 
   export let formats: TargetFormatInfo[] = [];
@@ -14,7 +15,7 @@
   export let hasMorePages: boolean = false;
   export let page: number = 0;
   export let totalPages: number = 1;
-  export let onSelectFormat: (format: TargetFormatInfo) => void = () => {};
+  export let onSelectFormat: (format: TargetFormatInfo, index: number) => void = () => {};
   export let onNextPage: () => void = () => {};
   export let onCenterClick: () => void = () => {};
   export let onHoverChange: (index: number) => void = () => {};
@@ -24,11 +25,17 @@
   const CY = 260;
   const R_IN = 70;
   const R_OUT = 244;
+  const PETALS = Array.from({ length: TOTAL_PETALS }, (_, i) => ({
+    path: createPetalPath(i, TOTAL_PETALS, CX, CY, R_IN, R_OUT, 14),
+    center: getPetalCenter(i, TOTAL_PETALS, CX, CY, 158),
+  }));
 
   $: activeFormat = activeIndex >= 0 && activeIndex < formats.length ? formats[activeIndex] : null;
 
   let dwellTimer: any = null;
   let dwellCooldown = false;
+  let cooldownTimer: ReturnType<typeof setTimeout>;
+  onDestroy(() => { clearDwell(); clearTimeout(cooldownTimer); });
 
   function triggerDwell() {
     if (status === 'converting' || status === 'done') return;
@@ -38,7 +45,7 @@
         onNextPage();
         dwellTimer = null;
         dwellCooldown = true;
-        setTimeout(() => {
+        cooldownTimer = setTimeout(() => {
           dwellCooldown = false;
         }, 800);
       }, 280);
@@ -59,9 +66,7 @@
     }
 
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    const hit = hitTest(x, y, CX, CY, R_IN, R_OUT, TOTAL_PETALS);
+    const hit = hitTestClient(e.clientX, e.clientY, rect);
 
     if (hit.type === 'petal') {
       if (hit.index !== activeIndex) {
@@ -96,7 +101,7 @@
     }
     const fmt = formats[index];
     if (fmt && fmt.available) {
-      onSelectFormat(fmt);
+      onSelectFormat(fmt, index);
     }
   }
 </script>
@@ -151,7 +156,7 @@
 
     <!-- The 8 Petals -->
     {#key page}
-    {#each Array(TOTAL_PETALS) as _, i}
+    {#each PETALS as petal, i}
       {@const isMore = i === 7 && hasMorePages}
       {@const fmt = !isMore && i < formats.length ? formats[i] : null}
       {@const label = isMore ? '···' : fmt ? fmt.label : ''}
@@ -160,8 +165,8 @@
       {@const isConverting = convertingIndex === i && status === 'converting'}
       {@const isDone = convertingIndex === i && status === 'done'}
       {@const isError = convertingIndex === i && status === 'error'}
-      {@const pathD = createPetalPath(i, TOTAL_PETALS, CX, CY, R_IN, R_OUT, 14)}
-      {@const centerPos = getPetalCenter(i, TOTAL_PETALS, CX, CY, 158)}
+      {@const pathD = petal.path}
+      {@const centerPos = petal.center}
 
       {#if label}
         <g
@@ -348,7 +353,6 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    filter: drop-shadow(0 20px 48px rgba(0, 0, 0, 0.35));
   }
 
   .wheel-svg {
@@ -578,7 +582,7 @@
     transform: translateX(-50%);
     z-index: 120;
     pointer-events: none;
-    animation: toastSlideUp 0.2s ease-out;
+    animation: wheelTooltipSlideUp 0.2s ease-out;
   }
 
   .tooltip-glass {
@@ -613,5 +617,9 @@
 
   .tooltip-icon {
     font-size: 14px;
+  }
+  @keyframes wheelTooltipSlideUp {
+    from { opacity: 0; transform: translate(-50%, 8px); }
+    to { opacity: 1; transform: translate(-50%, 0); }
   }
 </style>

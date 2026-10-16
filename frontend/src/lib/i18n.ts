@@ -1,3 +1,4 @@
+import { invoke } from '@tauri-apps/api/core';
 import { writable, derived, get } from 'svelte/store';
 export type Language = 'vi' | 'en';
 const key = 'vertex.language';
@@ -183,8 +184,7 @@ export const t = derived(language, lang => (key: MessageKey) => (lang === 'vi' ?
 export function translate(key: MessageKey) { return get(t)(key); }
 export async function syncNativeLanguage(lang: Language) {
   if ('__TAURI_INTERNALS__' in window) {
-    const { invoke } = await import('@tauri-apps/api/core');
-    await invoke('set_app_language', { language: lang });
+      await invoke('set_app_language', { language: lang });
   }
 }
 export async function setLanguage(lang: Language) {

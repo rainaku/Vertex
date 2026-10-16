@@ -60,6 +60,25 @@ pub enum VideoPreset {
     Slow,
 }
 
+impl Options {
+    /// A single normalization boundary for every conversion engine.
+    pub fn normalized(&self) -> Self {
+        let mut options = self.clone();
+        options.quality = options.quality.clamp(1, 100);
+        options.dpi = options.dpi.clamp(72, 600);
+        options.max_width = options.max_width.filter(|&v| v > 0).map(|v| v.min(32768));
+        options.max_height = options.max_height.filter(|&v| v > 0).map(|v| v.min(32768));
+        options.output_dir = options
+            .output_dir
+            .filter(|p| !p.as_os_str().is_empty() && !p.to_string_lossy().trim().is_empty());
+        options.gif_alpha_threshold = options.gif_alpha_threshold.max(1);
+        options.avif_speed = options.avif_speed.clamp(1, 10);
+        options.video_crf = options.video_crf.clamp(18, 35);
+        options.video_audio_kbps = options.video_audio_kbps.clamp(64, 320);
+        options
+    }
+}
+
 impl Default for Options {
     fn default() -> Self {
         Self {

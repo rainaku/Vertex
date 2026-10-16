@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { onDestroy } from 'svelte';
+  import { sliderValue } from './slider';
   export let value: number = 85;
   export let min: number = 0;
   export let max: number = 100;
@@ -11,13 +13,16 @@
   let trackEl: HTMLDivElement;
   let isDragging = false;
   let justReleased = false;
+  let trackRect: DOMRect | null = null;
+  let releaseTimer: ReturnType<typeof setTimeout>;
+  onDestroy(() => clearTimeout(releaseTimer));
 
   // Thumb half-width in px — used to clamp within the visible track
   const THUMB_W = 4;
   const THUMB_HALF = THUMB_W / 2;
 
   $: clamped = Math.min(max, Math.max(min, value));
-  $: pct = Math.max(0, Math.min(100, ((clamped - min) / (max - min)) * 100));
+  $: pct = max > min ? Math.max(0, Math.min(100, ((clamped - min) / (max - min)) * 100)) : 0;
 
   /**
    * Convert a clientX into a value, constrained strictly to the track element.
@@ -25,18 +30,20 @@
    */
   function valFromPointer(clientX: number): number {
     if (!trackEl) return value;
-    const rect = trackEl.getBoundingClientRect();
+    const rect = trackRect;
+    if (!rect) return value;
     // clamp into [left+THUMB_HALF, right-THUMB_HALF] so edges are reachable
-    const usable = rect.width - THUMB_HALF * 2;
+    const usable = Math.max(1, rect.width - THUMB_HALF * 2);
     const raw = Math.max(0, Math.min(usable, clientX - rect.left - THUMB_HALF));
     const ratio = raw / usable;
     const rawVal = min + ratio * (max - min);
-    return Math.min(max, Math.max(min, Math.round(rawVal / step) * step));
+    return sliderValue(rawVal, min, max, step);
   }
 
   function handlePointerDown(e: PointerEvent) {
     if (e.button !== 0) return;
     e.preventDefault();
+    trackRect = trackEl.getBoundingClientRect();
     isDragging = true;
     justReleased = false;
     containerEl.setPointerCapture(e.pointerId);
@@ -56,7 +63,8 @@
     justReleased = true;
     try { containerEl.releasePointerCapture(e.pointerId); } catch {}
     // spring-back flicker: briefly flag "justReleased" for elastic pop animation
-    setTimeout(() => { justReleased = false; }, 300);
+    clearTimeout(releaseTimer);
+    releaseTimer = setTimeout(() => { justReleased = false; }, 300);
   }
 
   function handleKeyDown(e: KeyboardEvent) {
@@ -67,7 +75,7 @@
     else if (e.key === 'End') next = max;
     else return;
     e.preventDefault();
-    value = Math.min(max, Math.max(min, next));
+    value = sliderValue(next, min, max, step);
     onChange?.(value);
   }
 </script>

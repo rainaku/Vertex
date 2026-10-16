@@ -1,3 +1,4 @@
+import { invoke } from '@tauri-apps/api/core';
 import { translate } from './i18n';
 import type {
   FormatInfo,
@@ -29,7 +30,6 @@ export async function detectFile(path: string): Promise<FormatInfo> {
       filename: path.split(/[/\\]/).pop() || `test.${ext.toLowerCase()}`,
     };
   }
-  const { invoke } = await import('@tauri-apps/api/core');
   return invoke<FormatInfo>('detect_file', { path });
 }
 
@@ -61,7 +61,6 @@ export async function getAvailableTargets(from: string): Promise<TargetFormatInf
         };
       });
   }
-  const { invoke } = await import('@tauri-apps/api/core');
   return invoke<TargetFormatInfo[]>('get_available_targets', { from });
 }
 
@@ -75,7 +74,6 @@ export async function getBatchInfo(paths: string[]): Promise<BatchInfo> {
         targets.every(list => list.some(item => item.format === target.format))),
     };
   }
-  const { invoke } = await import('@tauri-apps/api/core');
   return invoke<BatchInfo>('get_batch_info', { paths });
 }
 
@@ -90,6 +88,7 @@ export async function convertFile(
     return new Promise((resolve) => {
       setTimeout(() => {
         resolve({
+          cancelled: false,
           success: true,
           output_path: inputPath.replace(/\.[^.]+$/, `.${targetFormat.toLowerCase()}`),
           target_format: targetFormat,
@@ -98,7 +97,6 @@ export async function convertFile(
     });
   }
 
-  const { invoke } = await import('@tauri-apps/api/core');
   return invoke<ConvertResult>('convert_file', {
     jobId,
     inputPath,
@@ -109,7 +107,6 @@ export async function convertFile(
 
 export async function cancelJob(jobId: string): Promise<boolean> {
   if (!isTauri) return true;
-  const { invoke } = await import('@tauri-apps/api/core');
   return invoke<boolean>('cancel_job', { jobId });
 }
 
@@ -118,42 +115,36 @@ export async function revealInExplorer(path: string): Promise<void> {
     console.log('Reveal in explorer mock:', path);
     return;
   }
-  const { invoke } = await import('@tauri-apps/api/core');
   return invoke('reveal_in_explorer', { path });
 }
 
 export async function hideWheelWindow(generation: number): Promise<void> {
   if (!isTauri) return;
-  const { invoke } = await import('@tauri-apps/api/core');
   return invoke('hide_wheel_window', { generation });
 }
 
 export async function forceHideWheelWindow(): Promise<void> {
   if (!isTauri) return;
-  const { invoke } = await import('@tauri-apps/api/core');
   return invoke('force_hide_wheel_window');
 }
 
 export async function showWheelWindow(): Promise<void> {
   if (!isTauri) return;
-  const { invoke } = await import('@tauri-apps/api/core');
   return invoke('show_wheel_window');
 }
 
 /**
- * Toggle OS-level cursor passthrough on the transparent window.
- * passthrough=true  → window is invisible to mouse clicks (click-through to desktop)
- * passthrough=false → window captures mouse, wheel becomes interactive
+ * Ensure native input capture before interacting with the wheel.
+ * Legacy passthrough=true requests are ignored; hidden native windows already
+ * let the desktop receive input without changing WebView2 hit-test flags.
  */
 export async function setWindowPassthrough(passthrough: boolean): Promise<void> {
   if (!isTauri) return;
-  const { invoke } = await import('@tauri-apps/api/core');
   return invoke('set_window_passthrough', { passthrough });
 }
 
 export async function setConvertingState(converting: boolean): Promise<void> {
   if (!isTauri) return;
-  const { invoke } = await import('@tauri-apps/api/core');
   return invoke('set_converting_state', { converting });
 }
 
@@ -178,7 +169,10 @@ export async function pickFile(): Promise<string | null> {
         name: translate('Tệp được hỗ trợ'),
         extensions: [
           'png', 'jpg', 'jpeg', 'webp', 'avif', 'bmp', 'ico', 'tiff', 'gif',
-          'pdf', 'docx', 'txt', 'md', 'html', 'csv', 'json', 'xlsx'
+          'svg', 'heic', 'tif', 'pdf', 'docx', 'odt', 'rtf', 'txt', 'md', 'html',
+          'csv', 'tsv', 'json', 'xlsx', 'xls', 'ods', 'yaml', 'yml', 'toml', 'xml',
+          'pptx', 'ppt', 'odp', 'mp3', 'wav', 'flac', 'aac', 'ogg', 'm4a', 'opus', 'aiff', 'wma',
+          'mp4', 'mov', 'mkv', 'avi', 'webm', 'wmv', 'flv', '3gp', 'ts', 'zip', 'gz', '7z'
         ],
       },
     ],
@@ -229,46 +223,16 @@ export async function centerWindow(): Promise<void> {
     const { getCurrentWindow } = await import('@tauri-apps/api/window');
     await getCurrentWindow().center();
   } catch {
-    const { invoke } = await import('@tauri-apps/api/core');
-    await invoke('center_window');
+      await invoke('center_window');
   }
 }
 
 export async function prepareSettingsWindow(): Promise<void> {
   if (!isTauri) return;
-  try {
-    const { getCurrentWindow, LogicalSize } = await import('@tauri-apps/api/window');
-    const win = getCurrentWindow();
-    await win.setSize(new LogicalSize(1080, 780));
-    await win.center();
-    await win.show();
-    await win.setFocus();
-  } catch (err) {
-    console.warn('Frontend setSize failed:', err);
-  }
-  try {
-    const { invoke } = await import('@tauri-apps/api/core');
-    await invoke('prepare_settings_window');
-  } catch (err) {
-    console.warn('prepare_settings_window invoke failed:', err);
-  }
+  await invoke('prepare_settings_window');
 }
 
 export async function restoreWheelWindow(): Promise<void> {
   if (!isTauri) return;
-  try {
-    const { getCurrentWindow, LogicalSize } = await import('@tauri-apps/api/window');
-    const win = getCurrentWindow();
-    await win.setSize(new LogicalSize(480, 480));
-  } catch (err) {
-    console.warn('Frontend restore size failed:', err);
-  }
-  try {
-    const { invoke } = await import('@tauri-apps/api/core');
-    await invoke('restore_wheel_window');
-  } catch (err) {
-    console.warn('restore_wheel_window invoke failed:', err);
-  }
+  await invoke('restore_wheel_window');
 }
-
-

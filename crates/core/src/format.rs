@@ -72,12 +72,15 @@ pub enum Format {
     Webm,
     Wmv,
     Flv,
+    #[serde(rename = "3GP", alias = "THREEGP", alias = "3gp")]
     ThreeGp,
     Ts,
 
     // Archives
     Zip,
+    #[serde(rename = "TAR.GZ", alias = "TARGZ", alias = "tar.gz")]
     TarGz,
+    #[serde(rename = "7Z", alias = "SEVENZ", alias = "7z")]
     SevenZ,
 }
 
@@ -249,9 +252,29 @@ impl Format {
         }
     }
 
+    pub fn from_path_extension(path: &std::path::Path) -> Option<Self> {
+        if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+            let bytes = name.as_bytes();
+            if bytes.len() > 7 && bytes[bytes.len() - 7..].eq_ignore_ascii_case(b".tar.gz") {
+                return Some(Format::TarGz);
+            }
+        }
+        path.extension()
+            .and_then(|e| e.to_str())
+            .and_then(Self::from_extension)
+    }
+
     pub fn from_extension(ext: &str) -> Option<Self> {
-        let cleaned = ext.trim().trim_start_matches('.').to_lowercase();
-        match cleaned.as_str() {
+        let trimmed = ext.trim().trim_start_matches('.');
+        if trimmed.is_empty() || trimmed.len() > 32 || !trimmed.is_ascii() {
+            return None;
+        }
+        let mut buf = [0u8; 32];
+        for (dst, src) in buf.iter_mut().zip(trimmed.as_bytes()) {
+            *dst = src.to_ascii_lowercase();
+        }
+        let cleaned = std::str::from_utf8(&buf[..trimmed.len()]).ok()?;
+        match cleaned {
             "png" => Some(Format::Png),
             "jpg" | "jpeg" | "jpe" | "jfif" => Some(Format::Jpg),
             "webp" => Some(Format::Webp),
@@ -307,8 +330,16 @@ impl Format {
     }
 
     pub fn from_mime(mime: &str) -> Option<Self> {
-        let mime = mime.to_lowercase();
-        match mime.as_str() {
+        let base = mime.split(';').next()?.trim();
+        if base.is_empty() || base.len() > 80 || !base.is_ascii() {
+            return None;
+        }
+        let mut buf = [0u8; 80];
+        for (dst, src) in buf.iter_mut().zip(base.as_bytes()) {
+            *dst = src.to_ascii_lowercase();
+        }
+        let mime = std::str::from_utf8(&buf[..base.len()]).ok()?;
+        match mime {
             "image/png" => Some(Format::Png),
             "image/jpeg" => Some(Format::Jpg),
             "image/webp" => Some(Format::Webp),
@@ -323,23 +354,39 @@ impl Format {
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document" => {
                 Some(Format::Docx)
             }
+            "application/vnd.oasis.opendocument.text" => Some(Format::Odt),
+            "application/rtf" | "text/rtf" => Some(Format::Rtf),
             "text/plain" => Some(Format::Txt),
-            "text/markdown" => Some(Format::Md),
+            "text/markdown" | "text/x-markdown" => Some(Format::Md),
             "text/html" => Some(Format::Html),
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" => {
+                Some(Format::Xlsx)
+            }
+            "application/vnd.ms-excel" => Some(Format::Xls),
+            "application/vnd.oasis.opendocument.spreadsheet" => Some(Format::Ods),
             "text/csv" => Some(Format::Csv),
+            "text/tab-separated-values" => Some(Format::Tsv),
             "application/json" => Some(Format::Json),
-            "application/yaml" | "text/yaml" => Some(Format::Yaml),
+            "application/yaml" | "text/yaml" | "text/x-yaml" | "application/x-yaml" => {
+                Some(Format::Yaml)
+            }
+            "application/toml" | "text/x-toml" => Some(Format::Toml),
             "application/xml" | "text/xml" => Some(Format::Xml),
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation" => {
+                Some(Format::Pptx)
+            }
+            "application/vnd.ms-powerpoint" => Some(Format::Ppt),
+            "application/vnd.oasis.opendocument.presentation" => Some(Format::Odp),
             "audio/mpeg" | "audio/mp3" => Some(Format::Mp3),
             "audio/wav" | "audio/x-wav" | "audio/wave" => Some(Format::Wav),
             "audio/flac" | "audio/x-flac" => Some(Format::Flac),
             "audio/aac" | "audio/x-aac" => Some(Format::Aac),
             "audio/ogg" | "application/ogg" => Some(Format::Ogg),
-            "audio/mp4" | "audio/x-m4a" => Some(Format::M4a),
+            "audio/mp4" | "audio/x-m4a" | "audio/m4a" => Some(Format::M4a),
             "audio/opus" => Some(Format::Opus),
             "audio/aiff" | "audio/x-aiff" => Some(Format::Aiff),
             "audio/x-ms-wma" => Some(Format::Wma),
-            "video/mp4" => Some(Format::Mp4),
+            "video/mp4" | "video/x-m4v" => Some(Format::Mp4),
             "video/quicktime" => Some(Format::Mov),
             "video/x-matroska" => Some(Format::Mkv),
             "video/webm" => Some(Format::Webm),
@@ -347,8 +394,9 @@ impl Format {
             "video/x-ms-wmv" => Some(Format::Wmv),
             "video/x-flv" => Some(Format::Flv),
             "video/3gpp" | "video/3gpp2" => Some(Format::ThreeGp),
-            "video/mp2t" => Some(Format::Ts),
+            "video/mp2t" | "video/vnd.dlna.mpeg-tts" => Some(Format::Ts),
             "application/zip" => Some(Format::Zip),
+            "application/x-7z-compressed" => Some(Format::SevenZ),
             _ => None,
         }
     }

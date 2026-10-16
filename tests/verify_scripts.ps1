@@ -1,0 +1,33 @@
+$ErrorActionPreference = 'Stop'
+$WorkspaceRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
+. (Join-Path $WorkspaceRoot 'scripts\BuildTools.ps1')
+
+foreach ($name in @('b.ps1', 'r.ps1', 'prepush.ps1', 'scripts/BuildTools.ps1')) {
+    $tokens = $null
+    $errors = $null
+    [void][Management.Automation.Language.Parser]::ParseFile((Join-Path $WorkspaceRoot $name), [ref]$tokens, [ref]$errors)
+    if ($errors.Count) { throw ($errors | Out-String) }
+}
+
+foreach ($target in @($WorkspaceRoot, [IO.Path]::GetTempPath())) {
+    try { Remove-VertexBuildDirectory -LiteralPath $target -WorkspaceRoot $WorkspaceRoot; throw 'Workspace guard failed' }
+    catch { if ($_.Exception.Message -notlike 'Refusing to remove*') { throw } }
+}
+
+$testDir = Join-Path $WorkspaceRoot ('target\script-tests-' + [Guid]::NewGuid().ToString('N'))
+[void][IO.Directory]::CreateDirectory($testDir)
+try {
+    $nested = Join-Path $testDir 'a directory with spaces'
+    [void][IO.Directory]::CreateDirectory($nested)
+    Remove-VertexBuildDirectory -LiteralPath $nested -WorkspaceRoot $WorkspaceRoot
+    if (Test-Path -LiteralPath $nested) { throw 'Build cleanup failed' }
+} finally { Remove-VertexBuildDirectory -LiteralPath $testDir -WorkspaceRoot $WorkspaceRoot }
+
+$listener = New-Object Net.Sockets.TcpListener ([Net.IPAddress]::Loopback), 0
+$listener.Start()
+try {
+    $port = $listener.LocalEndpoint.Port
+    if (-not (Test-VertexTcpPort -Port $port)) { throw 'Live TCP port was not detected' }
+} finally { $listener.Stop() }
+if (Test-VertexTcpPort -Port $port) { throw 'Closed TCP port reported open' }
+Write-Output ('PowerShell ' + $PSVersionTable.PSVersion + ': syntax, workspace guard, cleanup and TCP checks passed')

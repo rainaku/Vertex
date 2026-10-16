@@ -9,17 +9,21 @@ license.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
-anyhow.workspace = true
-tracing.workspace = true
 infer.workspace = true
-mime_guess.workspace = true
 image.workspace = true
 ravif.workspace = true
 rgb.workspace = true
 sha2.workspace = true
 regex.workspace = true
+quick-xml = "0.42"
+zip = { version = "4.6", default-features = false, features = ["deflate"] }
+same-file = "1.0"
+fast_image_resize = { version = "6.1", features = ["image", "rayon"] }
 
 tempfile = "3.16"
 
 [dependencies.url]
 version = "2.5"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = ["Win32_Storage_FileSystem", "Win32_Foundation"] }

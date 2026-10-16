@@ -1,4 +1,6 @@
-import { writable } from 'svelte/store';
+import { writable, get } from 'svelte/store';
+import { compare } from 'semver';
+import type { Update } from '@tauri-apps/plugin-updater';
 import { isTauri } from './tauri-bridge';
 
 export interface UpdateInfo {
@@ -30,33 +32,29 @@ export const updateStore = writable<UpdateInfo>({
   directDownloadUrl: null,
 });
 
-let activeUpdateInstance: any = null;
+let activeUpdateInstance: Update | null = null;
+let checkInFlight: Promise<void> | null = null;
+
+export function checkForUpdates(manual = false): Promise<void> {
+  if (checkInFlight) return checkInFlight;
+  if (get(updateStore).status === 'downloading') return Promise.resolve();
+  checkInFlight = performUpdateCheck(manual).finally(() => { checkInFlight = null; });
+  return checkInFlight;
+}
 
 /**
  * Compare two semver strings (e.g. "0.1.1" vs "0.1.0").
  * Returns 1 if vA > vB, -1 if vA < vB, 0 if equal.
  */
-export function compareVersions(vA: string, vB: string): number {
-  const parse = (v: string) =>
-    v.replace(/^[^\d]*/, '').split('.').map((n) => parseInt(n, 10) || 0);
-  const a = parse(vA);
-  const b = parse(vB);
-  const len = Math.max(a.length, b.length);
-  for (let i = 0; i < len; i++) {
-    const numA = a[i] ?? 0;
-    const numB = b[i] ?? 0;
-    if (numA > numB) return 1;
-    if (numA < numB) return -1;
-  }
-  return 0;
+export function compareVersions(a: string, b: string): number {
+  return compare(a.replace(/^v/, ''), b.replace(/^v/, ''));
 }
-
 /**
  * Check for new releases.
  * 1. Attempts Tauri official updater plugin (`check()`).
- * 2. Fallbacks to GitHub Releases API if plugin check yields no update or errors.
+ * 2. Falls back to GitHub Releases API only when the plugin check fails.
  */
-export async function checkForUpdates(manual: boolean = false): Promise<void> {
+async function performUpdateCheck(manual: boolean = false): Promise<void> {
   updateStore.update((s) => ({
     ...s,
     status: 'checking',
@@ -67,7 +65,16 @@ export async function checkForUpdates(manual: boolean = false): Promise<void> {
   if (isTauri) {
     try {
       const { check } = await import('@tauri-apps/plugin-updater');
+      const { getVersion } = await import('@tauri-apps/api/app');
+      const currentVersion = await getVersion();
+      updateStore.update(s => ({ ...s, currentVersion }));
+      await activeUpdateInstance?.close();
+      activeUpdateInstance = null;
       const update = await check();
+      if (!update) {
+        updateStore.update(s => ({ ...s, status: 'up-to-date', latestVersion: currentVersion, error: null }));
+        return;
+      }
       if (update) {
         activeUpdateInstance = update;
         updateStore.set({
@@ -92,6 +99,7 @@ export async function checkForUpdates(manual: boolean = false): Promise<void> {
   // 2. Fallback to GitHub Releases API
   try {
     const res = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/releases/latest`, {
+      signal: AbortSignal.timeout(15000),
       headers: {
         Accept: 'application/vnd.github.v3+json',
       },
@@ -123,10 +131,11 @@ export async function checkForUpdates(manual: boolean = false): Promise<void> {
       : null;
     const downloadUrl = exeAsset ? exeAsset.browser_download_url : data.html_url;
 
-    if (tag && compareVersions(tag, APP_VERSION) > 0) {
+    const currentVersion = get(updateStore).currentVersion;
+    if (tag && compareVersions(tag, currentVersion) > 0) {
       updateStore.set({
         status: 'available',
-        currentVersion: APP_VERSION,
+        currentVersion,
         latestVersion: tag,
         releaseNotes: notes,
         publishedAt: pubDate,
@@ -148,7 +157,7 @@ export async function checkForUpdates(manual: boolean = false): Promise<void> {
     console.error('[Updater] Check failed:', err);
     updateStore.update((s) => ({
       ...s,
-      status: manual ? 'error' : 'up-to-date',
+      status: manual ? 'error' : 'idle',
       error: manual ? (err.message || 'Không thể kết nối đến máy chủ cập nhật.') : null,
     }));
   }
@@ -160,12 +169,17 @@ export async function checkForUpdates(manual: boolean = false): Promise<void> {
 export async function installUpdate(): Promise<void> {
   if (!activeUpdateInstance) {
     // If we only have direct download URL, open it
-    let targetUrl: string | null = null;
-    updateStore.subscribe((s) => {
-      targetUrl = s.directDownloadUrl;
-    })();
+    const targetUrl = get(updateStore).directDownloadUrl;
     if (targetUrl) {
-      await openReleasePage(targetUrl);
+      try {
+        await openReleasePage(targetUrl);
+      } catch (err) {
+        updateStore.update(s => ({
+          ...s,
+          status: 'error',
+          error: err instanceof Error ? err.message : String(err),
+        }));
+      }
     }
     return;
   }
@@ -231,11 +245,9 @@ export async function installUpdate(): Promise<void> {
 export async function openReleasePage(customUrl?: string): Promise<void> {
   const url = customUrl || `https://github.com/${GITHUB_REPO}/releases/latest`;
   if (isTauri) {
-    try {
-      const { openUrl } = await import('@tauri-apps/plugin-opener');
-      await openUrl(url);
-      return;
-    } catch {}
+    const { openUrl } = await import('@tauri-apps/plugin-opener');
+    await openUrl(url);
+    return;
   }
   window.open(url, '_blank', 'noopener,noreferrer');
 }

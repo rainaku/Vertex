@@ -8,14 +8,6 @@
 
 @font-face {
   font-family: 'SF Pro Display';
-  src: url('/fonts/SF-Pro-Display-Bold.otf') format('opentype');
-  font-weight: 800;
-  font-style: normal;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: 'SF Pro Display';
   src: url('/fonts/SF-Pro-Display-Semibold.otf') format('opentype');
   font-weight: 600;
   font-style: normal;
@@ -38,24 +30,8 @@
   font-display: swap;
 }
 
-@font-face {
-  font-family: 'SF Pro Bold';
-  src: url('/fonts/SF-Pro-Display-Bold.otf') format('opentype');
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: 'SF Pro';
-  src: url('/fonts/SF-Pro-Display-Bold.otf') format('opentype');
-  font-weight: 700;
-  font-style: normal;
-  font-display: swap;
-}
-
 :root {
-  --font-family: 'SF Pro Display', 'SF Pro Bold', 'SF Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-family: 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   
   /* Solid Black & White Palette (No borders, pure shadow & solid contrast) */
   --petal-fill: #000000;
@@ -176,7 +152,7 @@ html, body {
   }
 }
 
-@keyframes toastSlideUp {
+@keyframes appToastSlideUp {
   from {
     opacity: 0;
     transform: translateY(12px);

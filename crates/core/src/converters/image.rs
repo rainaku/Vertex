@@ -1,77 +1,72 @@
-use std::fs::File;
-use std::io::BufWriter;
-use std::path::Path;
-
 use crate::cancel::CancelToken;
 use crate::converter::{Availability, Converter};
 use crate::error::{Result, VertexError};
 use crate::format::Format;
 use crate::options::Options;
-use image::codecs::jpeg::JpegEncoder;
-use image::codecs::webp::WebPEncoder;
-use image::imageops::FilterType;
-use image::{DynamicImage, ExtendedColorType, ImageFormat, Rgb, RgbImage};
+use image::codecs::{gif::GifEncoder, jpeg::JpegEncoder, webp::WebPEncoder};
+use image::{DynamicImage, ExtendedColorType, ImageDecoder, ImageEncoder, ImageFormat, RgbImage};
+use std::fs::File;
+use std::io::{BufWriter, Write};
+use std::path::Path;
 
 pub struct PureRustImageConverter {
     supported_sources: Vec<Format>,
     supported_targets: Vec<Format>,
 }
 
-/// JPEG has no alpha channel. Dropping alpha exposes arbitrary RGB values
-/// stored in transparent pixels (often black, sometimes colored noise).
+#[derive(Default)]
+struct Metadata {
+    exif: Option<Vec<u8>>,
+    icc: Option<Vec<u8>>,
+}
+impl Metadata {
+    fn apply(&mut self, encoder: &mut impl ImageEncoder) -> image::ImageResult<()> {
+        if let Some(icc) = self.icc.take() {
+            encoder
+                .set_icc_profile(icc)
+                .map_err(image::ImageError::Unsupported)?;
+        }
+        if let Some(exif) = self.exif.take() {
+            encoder
+                .set_exif_metadata(exif)
+                .map_err(image::ImageError::Unsupported)?;
+        }
+        Ok(())
+    }
+}
+
 fn flatten_on_background(img: DynamicImage, background: [u8; 3]) -> RgbImage {
     if !img.color().has_alpha() {
         return img.into_rgb8();
     }
     let rgba = img.into_rgba8();
-    RgbImage::from_fn(rgba.width(), rgba.height(), |x, y| {
-        let pixel = rgba.get_pixel(x, y).0;
+    let mut rgb = RgbImage::new(rgba.width(), rgba.height());
+    for (pixel, output) in rgba.pixels().zip(rgb.pixels_mut()) {
         let alpha = u32::from(pixel[3]);
-        Rgb(std::array::from_fn(|channel| {
-            ((u32::from(pixel[channel]) * alpha
+        for channel in 0..3 {
+            output[channel] = ((u32::from(pixel[channel]) * alpha
                 + u32::from(background[channel]) * (255 - alpha)
                 + 127)
-                / 255) as u8
-        }))
-    })
+                / 255) as u8;
+        }
+    }
+    rgb
 }
 
-/// Resampling straight-alpha RGB leaks invisible pixel colors into the edge.
-/// Filter premultiplied floating-point pixels, then restore straight alpha
-/// for the encoders. This also covers the automatic ICO downscale.
-fn resize_with_alpha(img: &DynamicImage, width: u32, height: u32) -> DynamicImage {
-    if !img.color().has_alpha() {
-        return img.resize(width, height, FilterType::Lanczos3);
-    }
-    let mut premultiplied = img.to_rgba32f();
-    for pixel in premultiplied.pixels_mut() {
-        let alpha = pixel[3];
-        for channel in &mut pixel.0[..3] {
-            *channel *= alpha;
-        }
-    }
-    let mut resized = DynamicImage::ImageRgba32F(premultiplied)
-        .resize(width, height, FilterType::Lanczos3)
-        .into_rgba32f();
-    for pixel in resized.pixels_mut() {
-        let alpha = pixel[3].clamp(0.0, 1.0);
-        for channel in &mut pixel.0[..3] {
-            *channel = if alpha > 0.0 {
-                (*channel / alpha).clamp(0.0, 1.0)
-            } else {
-                0.0
-            };
-        }
-        pixel[3] = alpha;
-    }
-    let resized = DynamicImage::ImageRgba32F(resized);
-    match img.color() {
-        image::ColorType::La16 | image::ColorType::Rgba16 => {
-            DynamicImage::ImageRgba16(resized.to_rgba16())
-        }
-        image::ColorType::Rgba32F => resized,
-        _ => DynamicImage::ImageRgba8(resized.to_rgba8()),
-    }
+/// SIMD dispatch and alpha-aware convolution preserve the source bit depth
+/// without expanding an 8-bit image to four f32 channels.
+fn resize_with_alpha(img: DynamicImage, width: u32, height: u32) -> Result<DynamicImage> {
+    let mut output = DynamicImage::new(width, height, img.color());
+    fast_image_resize::Resizer::new()
+        .resize(
+            &img,
+            &mut output,
+            &fast_image_resize::ResizeOptions::new().resize_alg(
+                fast_image_resize::ResizeAlg::Convolution(fast_image_resize::FilterType::Lanczos3),
+            ),
+        )
+        .map_err(|e| VertexError::Encoding(format!("Image resize failed: {e}")))?;
+    Ok(output)
 }
 
 impl Default for PureRustImageConverter {
@@ -104,15 +99,12 @@ impl Converter for PureRustImageConverter {
     fn name(&self) -> &'static str {
         "PureRustImageConverter"
     }
-
     fn sources(&self) -> &[Format] {
         &self.supported_sources
     }
-
     fn targets(&self, _from: Format) -> Vec<Format> {
         self.supported_targets.clone()
     }
-
     fn available(&self) -> Availability {
         Availability::Ok
     }
@@ -126,190 +118,171 @@ impl Converter for PureRustImageConverter {
         cancel: &CancelToken,
     ) -> Result<()> {
         cancel.check()?;
+        crate::path_utils::ensure_distinct(input, output)?;
+        let opts = opts.normalized();
+        let target = Format::from_path_extension(output)
+            .ok_or_else(|| VertexError::UnrecognizedFormat(output.to_path_buf()))?;
+        if !self.supported_targets.contains(&target) {
+            return Err(VertexError::NoConversionRoute {
+                from: "IMAGE".into(),
+                to: target.to_string(),
+            });
+        }
         progress(0.1);
-
-        // 1. Decode image using pure Rust `image` crate
-        let mut img = image::open(input).map_err(VertexError::Image)?;
-
+        let io = |source| VertexError::Io {
+            path: output.to_path_buf(),
+            source,
+        };
+        let reader = image::ImageReader::open(input)
+            .map_err(|source| VertexError::Io {
+                path: input.to_path_buf(),
+                source,
+            })?
+            .with_guessed_format()
+            .map_err(|source| VertexError::Io {
+                path: input.to_path_buf(),
+                source,
+            })?;
+        let mut decoder = reader.into_decoder()?;
+        let orientation = decoder.orientation()?;
+        let mut metadata = Metadata::default();
+        if !opts.strip_metadata {
+            if matches!(target, Format::Jpg | Format::Png | Format::Webp) {
+                metadata.exif = decoder.exif_metadata()?;
+                if let Some(exif) = &mut metadata.exif {
+                    let _ = image::metadata::Orientation::remove_from_exif_chunk(exif);
+                }
+            }
+            if matches!(
+                target,
+                Format::Jpg | Format::Png | Format::Webp | Format::Tiff
+            ) {
+                metadata.icc = decoder.icc_profile()?;
+            }
+        }
+        let mut img = DynamicImage::from_decoder(decoder)?;
+        img.apply_orientation(orientation);
         cancel.check()?;
         progress(0.35);
 
-        // 2. Resize if specified in Options
-        if let (Some(max_w), Some(max_h)) = (opts.max_width, opts.max_height) {
-            if img.width() > max_w || img.height() > max_h {
-                img = resize_with_alpha(&img, max_w.max(1), max_h.max(1));
-            }
-        } else if let Some(max_w) = opts.max_width {
-            if img.width() > max_w {
-                let ratio = max_w as f32 / img.width() as f32;
-                let new_h = (img.height() as f32 * ratio).round() as u32;
-                img = resize_with_alpha(&img, max_w.max(1), new_h.max(1));
-            }
-        } else if let Some(max_h) = opts.max_height {
-            if img.height() > max_h {
-                let ratio = max_h as f32 / img.height() as f32;
-                let new_w = (img.width() as f32 * ratio).round() as u32;
-                img = resize_with_alpha(&img, new_w.max(1), max_h.max(1));
-            }
+        let cap = if target == Format::Ico { 256 } else { u32::MAX };
+        let max_w = opts.max_width.unwrap_or(u32::MAX).min(cap);
+        let max_h = opts.max_height.unwrap_or(u32::MAX).min(cap);
+        let ratio = (f64::from(max_w) / f64::from(img.width()))
+            .min(f64::from(max_h) / f64::from(img.height()))
+            .min(1.0);
+        if ratio < 1.0 {
+            let w = (f64::from(img.width()) * ratio).round().max(1.0) as u32;
+            let h = (f64::from(img.height()) * ratio).round().max(1.0) as u32;
+            img = resize_with_alpha(img, w.min(max_w), h.min(max_h))?;
         }
-
         cancel.check()?;
         progress(0.55);
-
-        // Detect target format from output path extension
-        let target_ext = output.extension().and_then(|e| e.to_str()).unwrap_or("png");
-        let target_fmt = Format::from_extension(target_ext).unwrap_or(Format::Png);
-
-        // 3. Encode to target format
-        match target_fmt {
-            Format::Png => {
-                let file = File::create(output).map_err(|e| VertexError::Io {
-                    path: output.to_path_buf(),
-                    source: e,
-                })?;
-                let mut writer = BufWriter::new(file);
-                img.write_to(&mut writer, ImageFormat::Png)
-                    .map_err(VertexError::Image)?;
-            }
+        let staged = crate::path_utils::stage_output(output)?;
+        let mut writer = BufWriter::new(File::create(&staged).map_err(io)?);
+        match target {
             Format::Jpg => {
                 let rgb = flatten_on_background(img, opts.jpeg_background);
-                let file = File::create(output).map_err(|e| VertexError::Io {
-                    path: output.to_path_buf(),
-                    source: e,
-                })?;
-                let mut writer = BufWriter::new(file);
-                let mut encoder =
-                    JpegEncoder::new_with_quality(&mut writer, opts.quality.clamp(1, 100));
-                encoder
-                    .encode(
-                        rgb.as_raw(),
-                        rgb.width(),
-                        rgb.height(),
-                        ExtendedColorType::Rgb8,
-                    )
-                    .map_err(VertexError::Image)?;
+                let mut encoder = JpegEncoder::new_with_quality(&mut writer, opts.quality);
+                metadata.apply(&mut encoder)?;
+                encoder.encode(
+                    rgb.as_raw(),
+                    rgb.width(),
+                    rgb.height(),
+                    ExtendedColorType::Rgb8,
+                )?;
             }
             Format::Webp => {
-                let rgba = img.into_rgba8();
-                let file = File::create(output).map_err(|e| VertexError::Io {
-                    path: output.to_path_buf(),
-                    source: e,
-                })?;
-                let mut writer = BufWriter::new(file);
-                let encoder = WebPEncoder::new_lossless(&mut writer);
-                encoder
-                    .encode(
-                        rgba.as_raw(),
-                        rgba.width(),
-                        rgba.height(),
-                        ExtendedColorType::Rgba8,
-                    )
-                    .map_err(VertexError::Image)?;
-            }
-            Format::Avif => {
-                let rgba = img.into_rgba8();
-                let width = rgba.width() as usize;
-                let height = rgba.height() as usize;
-                let raw_bytes = rgba.as_raw();
-
-                use rgb::FromSlice;
-                let pixels: &[rgb::RGBA8] = raw_bytes.as_rgba();
-
-                let encoder = ravif::Encoder::new()
-                    .with_quality(opts.quality.clamp(1, 100) as f32)
-                    // Keep the transparency mask at full quality independently
-                    // of the lossy color quality chosen by the user.
-                    .with_alpha_quality(100.0)
-                    .with_speed(opts.avif_speed.clamp(1, 10));
-
-                let res = encoder
-                    .encode_rgba(ravif::Img::new(pixels, width, height))
-                    .map_err(|e| VertexError::Encoding(format!("AVIF encode failed: {e}")))?;
-
-                std::fs::write(output, res.avif_file).map_err(|e| VertexError::Io {
-                    path: output.to_path_buf(),
-                    source: e,
-                })?;
-            }
-            Format::Bmp => {
-                let file = File::create(output).map_err(|e| VertexError::Io {
-                    path: output.to_path_buf(),
-                    source: e,
-                })?;
-                let mut writer = BufWriter::new(file);
-                // BMP's grayscale+alpha path drops alpha; normalize to RGBA
-                // so the encoder writes the V4 header and explicit alpha mask.
-                let bmp = if img.color().has_alpha() {
+                let img = if img.color().has_alpha() {
                     DynamicImage::ImageRgba8(img.into_rgba8())
                 } else {
                     DynamicImage::ImageRgb8(img.into_rgb8())
                 };
-                bmp.write_to(&mut writer, ImageFormat::Bmp)
-                    .map_err(VertexError::Image)?;
+                let mut encoder = WebPEncoder::new_lossless(&mut writer);
+                metadata.apply(&mut encoder)?;
+                encoder.encode(
+                    img.as_bytes(),
+                    img.width(),
+                    img.height(),
+                    img.color().into(),
+                )?;
             }
-            Format::Ico => {
-                // ICO typically requires max 256x256 dimensions
-                let ico_img = if img.width() > 256 || img.height() > 256 {
-                    resize_with_alpha(&img, 256, 256)
+            Format::Avif => {
+                use rgb::FromSlice;
+                let encoder = ravif::Encoder::new()
+                    .with_quality(f32::from(opts.quality))
+                    .with_alpha_quality(100.0)
+                    .with_speed(opts.avif_speed);
+                let result = if img.color().has_alpha() {
+                    let rgba = img.into_rgba8();
+                    encoder.encode_rgba(ravif::Img::new(
+                        rgba.as_raw().as_rgba(),
+                        rgba.width() as usize,
+                        rgba.height() as usize,
+                    ))
                 } else {
-                    img
-                };
-                let file = File::create(output).map_err(|e| VertexError::Io {
-                    path: output.to_path_buf(),
-                    source: e,
-                })?;
-                let mut writer = BufWriter::new(file);
-                DynamicImage::ImageRgba8(ico_img.into_rgba8())
-                    .write_to(&mut writer, ImageFormat::Ico)
-                    .map_err(VertexError::Image)?;
-            }
-            Format::Tiff => {
-                let file = File::create(output).map_err(|e| VertexError::Io {
-                    path: output.to_path_buf(),
-                    source: e,
-                })?;
-                let mut writer = BufWriter::new(file);
-                img.write_to(&mut writer, ImageFormat::Tiff)
-                    .map_err(VertexError::Image)?;
+                    let rgb = img.into_rgb8();
+                    encoder.encode_rgb(ravif::Img::new(
+                        rgb.as_raw().as_rgb(),
+                        rgb.width() as usize,
+                        rgb.height() as usize,
+                    ))
+                }
+                .map_err(|e| VertexError::Encoding(format!("AVIF encode failed: {e}")))?;
+                writer.write_all(&result.avif_file).map_err(io)?;
             }
             Format::Gif => {
-                // GIF supports only binary transparency. The encoder treats
-                // every nonzero alpha as opaque, exposing nearly invisible
-                // PNG edge pixels. Choose the cutoff explicitly instead.
                 let mut rgba = img.into_rgba8();
                 for pixel in rgba.pixels_mut() {
-                    if pixel[3] < opts.gif_alpha_threshold.max(1) {
-                        pixel.0 = [0, 0, 0, 0];
+                    if pixel[3] < opts.gif_alpha_threshold {
+                        pixel.0 = [0; 4];
                     } else {
                         pixel[3] = 255;
                     }
                 }
-                let file = File::create(output).map_err(|e| VertexError::Io {
-                    path: output.to_path_buf(),
-                    source: e,
-                })?;
-                let mut writer = BufWriter::new(file);
-                DynamicImage::ImageRgba8(rgba)
-                    .write_to(&mut writer, ImageFormat::Gif)
-                    .map_err(VertexError::Image)?;
+                GifEncoder::new_with_speed(&mut writer, 10)
+                    .encode_frame(image::Frame::new(rgba))?;
             }
-            other => {
-                return Err(VertexError::NoConversionRoute {
-                    from: "IMAGE".to_string(),
-                    to: other.to_string(),
-                });
+            Format::Ico => DynamicImage::ImageRgba8(img.into_rgba8())
+                .write_to(&mut writer, ImageFormat::Ico)?,
+            Format::Bmp => {
+                let img = if img.color().has_alpha() {
+                    DynamicImage::ImageRgba8(img.into_rgba8())
+                } else {
+                    DynamicImage::ImageRgb8(img.into_rgb8())
+                };
+                img.write_to(&mut writer, ImageFormat::Bmp)?;
             }
+            Format::Png => {
+                let img = match img {
+                    DynamicImage::ImageRgb32F(_) => DynamicImage::ImageRgb16(img.into_rgb16()),
+                    DynamicImage::ImageRgba32F(_) => DynamicImage::ImageRgba16(img.into_rgba16()),
+                    image => image,
+                };
+                let mut encoder = image::codecs::png::PngEncoder::new(&mut writer);
+                metadata.apply(&mut encoder)?;
+                img.write_with_encoder(encoder)?;
+            }
+            Format::Tiff => {
+                let mut encoder = image::codecs::tiff::TiffEncoder::new(&mut writer);
+                metadata.apply(&mut encoder)?;
+                img.write_with_encoder(encoder)?;
+            }
+            _ => unreachable!(),
         }
-
+        writer.flush().map_err(io)?;
+        drop(writer);
         cancel.check()?;
+        crate::path_utils::ensure_distinct(input, output)?;
+        crate::path_utils::publish_exact(staged, output)?;
         progress(1.0);
         Ok(())
     }
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use image::Rgb;
 
     #[test]
     fn jpeg_flatten_preserves_rgb_and_composites_alpha() {

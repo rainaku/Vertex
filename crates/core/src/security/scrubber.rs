@@ -1,63 +1,39 @@
-use regex::Regex;
+use regex::{Captures, Regex};
+use std::borrow::Cow;
 use std::sync::LazyLock;
 
-static SP_DC_REGEX: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?i)(sp_dc=)[^\s;,\r\n\x22]+").unwrap());
-
-static GOOGLE_API_KEY_REGEX: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"AIza[0-9A-Za-z\-_]{16,40}").unwrap());
-
-static GITHUB_TOKEN_REGEX: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?:ghp|gho|ghu|ghs|ghr)_[0-9A-Za-z]{36}|github_pat_[0-9A-Za-z_]{82}").unwrap()
-});
-
-static DPAPI_REGEX: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"enc:[A-Za-z0-9+/=]{16,}").unwrap());
-
-static URL_SECRET_PARAM_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+static SECRETS: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
-        r"(?i)([?&](?:key|apikey|api_key|token|access_token|secret|client_secret)=)[^&\s\x22\x27]+",
-    )
-    .unwrap()
+    r#"(?ix)
+    (?P<assignment>\b["']?(?:password|passwd|pwd|token|access_token|api_key|apikey|key|secret|client_secret|sp_dc)["']?\s*[:=]\s*)
+    (?:"(?:\\.|[^"\\\r\n])*"|'(?:\\.|[^'\\\r\n])*'|[^\s,;&"'<>]+)
+    | (?P<userinfo>https?://)[^/\s@]+@
+    | (?P<bearer>Bearer\s+)[A-Za-z0-9\-._~+/]+=*
+    | (?P<google>AIza)[0-9A-Za-z\-_]{16,40}
+    | (?P<github>(?:ghp|gho|ghu|ghs|ghr)_[0-9A-Za-z]{36}|github_pat_[0-9A-Za-z_]{82})
+    | (?P<dpapi>enc:)[A-Za-z0-9+/=]{16,}
+    "#).expect("valid credential redaction regex")
 });
 
-static BEARER_TOKEN_REGEX: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?i)(Bearer\s+)[A-Za-z0-9\-._~+/]+=*").unwrap());
-
-static PASSWORD_REGEX: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)((?:password|passwd|pwd)\s*[:=]\s*)[^\s,;\x22\x27]+").unwrap()
-});
-
-static QUOTED_SECRET_REGEX: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r#"(?i)((?:["']?)(?:password|passwd|pwd|token|access_token|api_key|apikey|secret|client_secret)["']?\s*[:=]\s*)(?:"[^"\r\n]*"|'[^'\r\n]*')"#).unwrap()
-});
-
-static URL_USERINFO_REGEX: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?i)(https?://)[^/\s@]+@").unwrap());
-
-/// Redacts sensitive credentials, tokens, keys, and passwords from logs and diagnostic strings.
 pub struct SensitiveDataScrubber;
-
 impl SensitiveDataScrubber {
-    pub fn scrub(input: &str) -> String {
-        if input.is_empty() {
-            return String::new();
-        }
-
-        let quoted = QUOTED_SECRET_REGEX.replace_all(input, "${1}[REDACTED]");
-        let userinfo = URL_USERINFO_REGEX.replace_all(&quoted, "${1}[REDACTED]@");
-        let s1 = SP_DC_REGEX.replace_all(&userinfo, "${1}[REDACTED]");
-        let s2 = GOOGLE_API_KEY_REGEX.replace_all(&s1, "AIza[REDACTED]");
-        let s3 = GITHUB_TOKEN_REGEX.replace_all(&s2, "[REDACTED_GITHUB_TOKEN]");
-        let s4 = DPAPI_REGEX.replace_all(&s3, "enc:[REDACTED]");
-        let s5 = URL_SECRET_PARAM_REGEX.replace_all(&s4, "${1}[REDACTED]");
-        let s6 = BEARER_TOKEN_REGEX.replace_all(&s5, "${1}[REDACTED]");
-        let s7 = PASSWORD_REGEX.replace_all(&s6, "${1}[REDACTED]");
-
-        s7.into_owned()
+    /// One pass, and no allocation at all for ordinary log lines.
+    pub fn scrub(input: &str) -> Cow<'_, str> {
+        SECRETS.replace_all(input, |caps: &Captures<'_>| {
+            if let Some(prefix) = caps.name("assignment").or_else(|| caps.name("bearer")) {
+                format!("{}[REDACTED]", prefix.as_str())
+            } else if let Some(prefix) = caps.name("userinfo") {
+                format!("{}[REDACTED]@", prefix.as_str())
+            } else if caps.name("google").is_some() {
+                "AIza[REDACTED]".into()
+            } else if caps.name("github").is_some() {
+                "[REDACTED_GITHUB_TOKEN]".into()
+            } else {
+                "enc:[REDACTED]".into()
+            }
+        })
     }
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -8,6 +8,20 @@
   import ElasticSlider from './ElasticSlider.svelte';
   import { gsap } from 'gsap';
   import { enable, disable, isEnabled } from '@tauri-apps/plugin-autostart';
+  import SlidersHorizontalIcon from 'phosphor-svelte/lib/SlidersHorizontalIcon';
+  import ImageIcon from 'phosphor-svelte/lib/ImageIcon';
+  import VideoCameraIcon from 'phosphor-svelte/lib/VideoCameraIcon';
+  import GearSixIcon from 'phosphor-svelte/lib/GearSixIcon';
+  import KeyboardIcon from 'phosphor-svelte/lib/KeyboardIcon';
+  import InfoIcon from 'phosphor-svelte/lib/InfoIcon';
+  import GlobeHemisphereWestIcon from 'phosphor-svelte/lib/GlobeHemisphereWestIcon';
+  import GithubLogoIcon from 'phosphor-svelte/lib/GithubLogoIcon';
+  import MagnifyingGlassIcon from 'phosphor-svelte/lib/MagnifyingGlassIcon';
+  import XIcon from 'phosphor-svelte/lib/XIcon';
+  import ArrowSquareOutIcon from 'phosphor-svelte/lib/ArrowSquareOutIcon';
+  import ArrowsClockwiseIcon from 'phosphor-svelte/lib/ArrowsClockwiseIcon';
+  import ArrowCounterClockwiseIcon from 'phosphor-svelte/lib/ArrowCounterClockwiseIcon';
+  import CheckIcon from 'phosphor-svelte/lib/CheckIcon';
 
   export let options: Options;
   export let onSave: (value: Options) => void;
@@ -66,7 +80,7 @@
   let pickingFolder = false;
   let isClosing = false;
   let appliedSuccess = false;
-  let appliedTimer: any = null;
+  let appliedTimer: ReturnType<typeof setTimeout> | undefined;
   let panelEl: HTMLElement | null = null;
   let backdropEl: HTMLElement | null = null;
 
@@ -85,18 +99,10 @@
   ];
 
   let paneEl: HTMLElement | null = null;
-  let isTabSwitching = false;
-
-  async function selectTab(id: TabKey) {
-    if (id === activeTab || isTabSwitching) return;
-    isTabSwitching = true;
-    // Animate out current pane
-    if (paneEl) {
-      await gsap.to(paneEl, { opacity: 0, x: -10, duration: 0.12, ease: 'power2.in' });
-    }
+  function selectTab(id: TabKey) {
+    if (isClosing) return;
     activeTab = id;
     searchQuery = '';
-    isTabSwitching = false;
   }
 
   // ── GSAP Animations ─────────────────────────────────────────────────────────
@@ -124,19 +130,19 @@
     gsap.set(node, { opacity: 0, x: 12 });
     gsap.to(node, { opacity: 1, x: 0, duration: 0.2, ease: 'power2.out' });
     return {
-      destroy() { paneEl = null; }
+      destroy() {
+        gsap.killTweensOf(node);
+        if (paneEl === node) paneEl = null;
+      }
     };
   }
 
-  export function requestClose(callback?: () => void) {
-    if (isClosing) return;
+  export function requestClose() {
+    if (isClosing || pickingFolder) return;
     isClosing = true;
 
     const tl = gsap.timeline({
-      onComplete: () => {
-        if (callback) callback();
-        else onClose();
-      }
+      onComplete: onClose
     });
 
     if (panelEl) {
@@ -155,37 +161,53 @@
     requestClose();
   }
 
-  function handleApply() {
-    if (isClosing || pickingFolder) return;
+  function persistDraft(): boolean {
     const value = normalizeOptions(draft);
     try {
       localStorage.setItem(SETTINGS_KEY, JSON.stringify(value));
       onSave(value);
+      draft = value;
+      error = '';
+      return true;
+    } catch {
+      error = $t('Không thể lưu cài đặt trên thiết bị này.');
+      return false;
+    }
+  }
+
+  function handleApply() {
+    if (isClosing || pickingFolder) return;
+    if (persistDraft()) {
       appliedSuccess = true;
       if (appliedTimer) clearTimeout(appliedTimer);
       appliedTimer = setTimeout(() => {
         appliedSuccess = false;
       }, 1600);
-    } catch {
-      error = $t('Không thể lưu cài đặt trên thiết bị này.');
     }
   }
 
   function handleSave() {
     if (isClosing || pickingFolder) return;
-    const value = normalizeOptions(draft);
-    try {
-      localStorage.setItem(SETTINGS_KEY, JSON.stringify(value));
-      requestClose(() => {
-        onSave(value);
-      });
-    } catch {
-      error = $t('Không thể lưu cài đặt trên thiết bị này.');
-    }
+    if (persistDraft()) requestClose();
   }
 
   function resetToDefault() {
+    if (isClosing || pickingFolder) return;
     draft = defaultOptions();
+    appliedSuccess = false;
+    clearTimeout(appliedTimer);
+    error = '';
+  }
+
+  async function openLink(url: string) {
+    error = '';
+    try {
+      await openReleasePage(url);
+    } catch {
+      error = $language === 'vi'
+        ? 'Không thể mở liên kết. Hãy thử lại.'
+        : 'Could not open the link. Try again.';
+    }
   }
 
   // ── Clean Window Dragging ───────────────────────────────────────────────────
@@ -193,8 +215,7 @@
   async function handleHeaderPointerDown(e: PointerEvent) {
     if (e.button !== 0) return;
     const target = e.target as HTMLElement;
-    // Strictly prevent dragging when clicking interactive controls or scrolling
-    if (target.closest('button, input, select, textarea, a, .btn-close, .search-box, .switch, .seg, .slider-root, .chip, .btn-subtle, .input-cell, .num-input, .swatch-pill, .content-scroll')) return;
+    if (target.closest('button, input, select, textarea, a')) return;
 
     if (isTauri) {
       try {
@@ -230,6 +251,7 @@
     window.removeEventListener('keydown', handleGlobalKeyDown, true);
     window.removeEventListener('focus', handleWindowFocus);
     if (appliedTimer) clearTimeout(appliedTimer);
+    [panelEl, backdropEl, paneEl].forEach(node => { if (node) gsap.killTweensOf(node); });
   });
 
   // ── Settings Computations ───────────────────────────────────────────────────
@@ -264,6 +286,7 @@
   }
 
   async function chooseFolder() {
+    if (!isTauri || pickingFolder || isClosing) return;
     pickingFolder = true;
     error = '';
     try {
@@ -282,27 +305,28 @@
   $: isSearching = searchQuery.trim().length > 0;
   $: lowerSearch = searchQuery.toLowerCase().trim();
 
-  function matchText(text: string): boolean {
-    return text.toLowerCase().includes(lowerSearch);
+  function matchText(text: string, query: string): boolean {
+    return text.toLowerCase().includes(query);
   }
 
-  $: hasMatchAutostart = matchText('khởi động cùng windows') || matchText('startup') || matchText('autostart') || matchText('boot') || matchText('start with windows');
-  $: hasMatchLanguage = matchText('ngôn ngữ') || matchText('language') || matchText('tiếng việt') || matchText('english');
-  $: hasMatchQuality = matchText('chất lượng') || matchText('quality') || matchText('jpg') || matchText('avif') || matchText('nén');
-  $: hasMatchFolder = matchText('thư mục') || matchText('folder') || matchText('output') || matchText('đầu ra') || matchText('đích');
-  $: hasMatchCollision = matchText('trùng') || matchText('tên tệp') || matchText('collision') || matchText('ghi đè') || matchText('overwrite');
-  $: hasMatchMetadata = matchText('exif') || matchText('siêu dữ liệu') || matchText('metadata') || matchText('gps') || matchText('riêng tư');
-  $: hasMatchBgColor = matchText('màu nền') || matchText('nền') || matchText('background') || matchText('color');
-  $: hasMatchDimensions = matchText('kích thước') || matchText('rộng') || matchText('cao') || matchText('width') || matchText('height') || matchText('dimension');
-  $: hasMatchVideoCodec = matchText('video') || matchText('codec') || matchText('h264') || matchText('h265') || matchText('mã hóa');
-  $: hasMatchVideoCrf = matchText('crf') || matchText('nét') || matchText('dung lượng video');
-  $: hasMatchAvifSpeed = matchText('avif') || matchText('tốc độ') || matchText('speed');
-  $: hasMatchGifAlpha = matchText('gif') || matchText('alpha') || matchText('trong suốt') || matchText('threshold');
-  $: hasMatchDpi = matchText('dpi') || matchText('pdf') || matchText('tài liệu') || matchText('phân giải');
-  $: hasMatchVideoPreset = matchText('preset') || matchText('cpu') || matchText('fast') || matchText('slow');
-  $: hasMatchShortcuts = matchText('phím tắt') || matchText('shortcut') || matchText('shift') || matchText('drag') || matchText('esc');
+  $: hasMatchAutostart = matchText('khởi động cùng windows', lowerSearch) || matchText('startup', lowerSearch) || matchText('autostart', lowerSearch) || matchText('boot', lowerSearch) || matchText('start with windows', lowerSearch);
+  $: hasMatchLanguage = matchText('ngôn ngữ', lowerSearch) || matchText('language', lowerSearch) || matchText('tiếng việt', lowerSearch) || matchText('english', lowerSearch);
+  $: hasMatchQuality = matchText('chất lượng', lowerSearch) || matchText('quality', lowerSearch) || matchText('jpg', lowerSearch) || matchText('avif', lowerSearch) || matchText('nén', lowerSearch);
+  $: hasMatchFolder = matchText('thư mục', lowerSearch) || matchText('folder', lowerSearch) || matchText('output', lowerSearch) || matchText('đầu ra', lowerSearch) || matchText('đích', lowerSearch);
+  $: hasMatchCollision = matchText('trùng', lowerSearch) || matchText('tên tệp', lowerSearch) || matchText('collision', lowerSearch) || matchText('ghi đè', lowerSearch) || matchText('overwrite', lowerSearch);
+  $: hasMatchMetadata = matchText('exif', lowerSearch) || matchText('siêu dữ liệu', lowerSearch) || matchText('metadata', lowerSearch) || matchText('gps', lowerSearch) || matchText('riêng tư', lowerSearch);
+  $: hasMatchBgColor = matchText('màu nền', lowerSearch) || matchText('nền', lowerSearch) || matchText('background', lowerSearch) || matchText('color', lowerSearch);
+  $: hasMatchDimensions = matchText('kích thước', lowerSearch) || matchText('rộng', lowerSearch) || matchText('cao', lowerSearch) || matchText('width', lowerSearch) || matchText('height', lowerSearch) || matchText('dimension', lowerSearch);
+  $: hasMatchVideoCodec = matchText('video', lowerSearch) || matchText('codec', lowerSearch) || matchText('h264', lowerSearch) || matchText('h265', lowerSearch) || matchText('mã hóa', lowerSearch);
+  $: hasMatchVideoCrf = matchText('crf', lowerSearch) || matchText('nét', lowerSearch) || matchText('dung lượng video', lowerSearch);
+  $: hasMatchAvifSpeed = matchText('avif', lowerSearch) || matchText('tốc độ', lowerSearch) || matchText('speed', lowerSearch);
+  $: hasMatchGifAlpha = matchText('gif', lowerSearch) || matchText('alpha', lowerSearch) || matchText('trong suốt', lowerSearch) || matchText('threshold', lowerSearch);
+  $: hasMatchDpi = matchText('dpi', lowerSearch) || matchText('pdf', lowerSearch) || matchText('tài liệu', lowerSearch) || matchText('phân giải', lowerSearch);
+  $: hasMatchVideoPreset = matchText('preset', lowerSearch) || matchText('cpu', lowerSearch) || matchText('fast', lowerSearch) || matchText('slow', lowerSearch);
+  $: hasMatchShortcuts = matchText('phím tắt', lowerSearch) || matchText('shortcut', lowerSearch) || matchText('shift', lowerSearch) || matchText('drag', lowerSearch) || matchText('esc', lowerSearch);
 
   $: hasAnySearchResult =
+    hasMatchAutostart ||
     hasMatchLanguage ||
     hasMatchQuality ||
     hasMatchFolder ||
@@ -318,6 +342,40 @@
     hasMatchVideoPreset ||
     hasMatchShortcuts;
 </script>
+{#snippet videoPresetControl()}
+              <div class="setting-row">
+                <div class="row-info">
+                  <span class="row-title">{$language === 'vi' ? 'Tốc độ CPU encode (Preset)' : 'Encoding speed preset'}</span>
+                  <span class="row-desc">{$language === 'vi' ? 'Tỷ lệ đánh đổi giữa tốc độ xử lý và kích thước nén.' : 'Tradeoff between processing speed and file size.'}</span>
+                </div>
+                <div class="seg">
+                  <button type="button" class="seg-btn" class:seg-on={draft.video_preset === 'fast'} on:click={() => draft.video_preset = 'fast'}>Fast</button>
+                  <button type="button" class="seg-btn" class:seg-on={draft.video_preset === 'medium'} on:click={() => draft.video_preset = 'medium'}>Medium</button>
+                  <button type="button" class="seg-btn" class:seg-on={draft.video_preset === 'slow'} on:click={() => draft.video_preset = 'slow'}>Slow</button>
+                </div>
+              </div>
+{/snippet}
+{#snippet shortcutControls()}
+
+              <div class="setting-row">
+                <div class="row-info">
+                  <span class="row-title">{$language === 'vi' ? 'Shift + Kéo tệp' : 'Shift + Drag & Drop'}</span>
+                  <span class="row-desc">{$language === 'vi' ? 'Giữ phím Shift trong khi kéo tệp bất kỳ từ Explorer để triệu hồi vòng quay chuyển đổi tức thì.' : 'Hold Shift while dragging files from Explorer to instantly summon the radial wheel.'}</span>
+                </div>
+                <span class="badge-key">Shift + Drag</span>
+              </div>
+
+              <div class="divider"></div>
+
+              <div class="setting-row">
+                <div class="row-info">
+                  <span class="row-title">{$language === 'vi' ? 'Hủy nhanh (Escape)' : 'Quick dismiss (Escape)'}</span>
+                  <span class="row-desc">{$language === 'vi' ? 'Nhấn Esc hoặc click ra ngoài để đóng ngay cửa sổ.' : 'Press Esc or click outside to dismiss.'}</span>
+                </div>
+                <span class="badge-key">Esc</span>
+              </div>
+{/snippet}
+
 
 <div
   class="backdrop"
@@ -332,7 +390,6 @@
     aria-modal="true"
     aria-labelledby="settings-title"
     tabindex="-1"
-    on:pointerdown={handleHeaderPointerDown}
   >
     <!-- ── Shell Layout (Sidebar + Main Pane) ────────────────────────────────── -->
     <div class="shell">
@@ -340,19 +397,17 @@
       <aside class="sidebar">
         <!-- Search Box -->
         <div class="search-box">
-          <svg class="search-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="11" cy="11" r="8"></circle>
-            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-          </svg>
+          <MagnifyingGlassIcon class="search-icon" size={16} weight="bold" aria-hidden="true" />
           <input
             type="text"
             class="search-input"
             placeholder={$language === 'vi' ? 'Tìm kiếm cài đặt…' : 'Search settings…'}
+            aria-label={$language === 'vi' ? 'Tìm kiếm cài đặt' : 'Search settings'}
             bind:value={searchQuery}
           />
           {#if searchQuery}
-            <button type="button" class="btn-clear-search" on:click={() => searchQuery = ''} aria-label="Clear">
-              ✕
+            <button type="button" class="btn-clear-search" on:click={() => searchQuery = ''} aria-label={$language === 'vi' ? 'Xóa tìm kiếm' : 'Clear search'}>
+              <XIcon size={14} weight="bold" aria-hidden="true" />
             </button>
           {/if}
         </div>
@@ -362,9 +417,7 @@
           {#if isSearching}
             <div class="nav-item nav-active">
               <span class="nav-icon">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-                </svg>
+                <MagnifyingGlassIcon size={18} weight="bold" aria-hidden="true" />
               </span>
               <span class="nav-label">{$language === 'vi' ? 'Kết quả tìm kiếm' : 'Search results'}</span>
             </div>
@@ -374,33 +427,22 @@
                 type="button"
                 class="nav-item"
                 class:nav-active={activeTab === tab.id}
+                aria-current={activeTab === tab.id ? 'page' : undefined}
                 on:click={() => selectTab(tab.id)}
               >
                 <span class="nav-icon">
                   {#if tab.icon === 'general'}
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                      <line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/>
-                    </svg>
+                    <SlidersHorizontalIcon size={18} weight="fill" aria-hidden="true" />
                   {:else if tab.icon === 'image'}
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                      <rect x="3" y="3" width="18" height="18" rx="2.5"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>
-                    </svg>
+                    <ImageIcon size={18} weight="fill" aria-hidden="true" />
                   {:else if tab.icon === 'video'}
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                      <polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/>
-                    </svg>
+                    <VideoCameraIcon size={18} weight="fill" aria-hidden="true" />
                   {:else if tab.icon === 'advanced'}
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                      <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
-                    </svg>
+                    <GearSixIcon size={18} weight="fill" aria-hidden="true" />
                   {:else if tab.icon === 'shortcuts'}
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                      <rect x="2" y="4" width="20" height="16" rx="3"/><path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M8 12h.01M12 12h.01M16 12h.01M7 16h10"/>
-                    </svg>
+                    <KeyboardIcon size={18} weight="fill" aria-hidden="true" />
                   {:else}
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                      <circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>
-                    </svg>
+                    <InfoIcon size={18} weight="fill" aria-hidden="true" />
                   {/if}
                 </span>
                 <span class="nav-label">{$language === 'vi' ? tab.labelVi : tab.labelEn}</span>
@@ -415,20 +457,14 @@
         <!-- Sidebar Footer (V-Notch Style) -->
         <div class="sidebar-footer">
           <div class="sidebar-socials">
-            <button type="button" class="btn-social" title="Vertex Website" on:click={() => { if (typeof window !== 'undefined') window.open?.('https://vertex.app', '_blank'); }}>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
-                <circle cx="12" cy="12" r="10"/>
-                <line x1="2" y1="12" x2="22" y2="12"/>
-                <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
-              </svg>
+            <button type="button" class="btn-social" title="Vertex Website" aria-label="Vertex Website" on:click={() => openLink('https://rainaku.id.vn')}>
+              <GlobeHemisphereWestIcon size={18} weight="fill" aria-hidden="true" />
             </button>
-            <button type="button" class="btn-social" title="GitHub" on:click={() => { if (typeof window !== 'undefined') window.open?.('https://github.com', '_blank'); }}>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/>
-              </svg>
+            <button type="button" class="btn-social" title="GitHub" aria-label="GitHub" on:click={() => openLink('https://github.com/rainaku/Vertex')}>
+              <GithubLogoIcon size={18} weight="fill" aria-hidden="true" />
             </button>
           </div>
-          <span class="build-tag">Build 1.0.0</span>
+          <span class="build-tag">Build {$updateStore.currentVersion}</span>
         </div>
       </aside>
 
@@ -458,7 +494,7 @@
             disabled={pickingFolder || isClosing}
             aria-label={$t('Đóng cài đặt')}
           >
-            ✕
+            <XIcon size={16} weight="bold" aria-hidden="true" />
           </button>
         </header>
 
@@ -530,7 +566,14 @@
                     </div>
                     <div class="folder-row">
                       <div class="folder-path">{draft.output_dir || ($language === 'vi' ? 'Cùng thư mục file gốc' : 'Same folder as source')}</div>
-                      <button type="button" class="btn-subtle" on:click={chooseFolder}>{$language === 'vi' ? 'Duyệt…' : 'Browse…'}</button>
+                      <button type="button" class="btn-subtle" on:click={chooseFolder} disabled={!isTauri || pickingFolder}>
+                        {pickingFolder ? $t('Đang chọn…') : $t('Duyệt…')}
+                      </button>
+                      {#if draft.output_dir}
+                        <button type="button" class="btn-subtle" on:click={() => draft.output_dir = undefined} disabled={pickingFolder} title={$language === 'vi' ? 'Đặt lại mặc định' : 'Reset to default'} aria-label={$t('Dùng thư mục gốc')}>
+                          <ArrowCounterClockwiseIcon size={16} weight="bold" aria-hidden="true" />
+                        </button>
+                      {/if}
                     </div>
                   </div>
                 {/if}
@@ -640,6 +683,8 @@
                   </div>
                 {/if}
 
+                {#if hasMatchVideoPreset}{@render videoPresetControl()}{/if}
+                {#if hasMatchShortcuts}{@render shortcutControls()}{/if}
                 {#if hasMatchDpi}
                   <div class="divider"></div>
                   <div class="setting-row vertical">
@@ -709,8 +754,8 @@
                     {pickingFolder ? '…' : ($language === 'vi' ? 'Duyệt…' : 'Browse…')}
                   </button>
                   {#if draft.output_dir}
-                    <button type="button" class="btn-subtle" on:click={() => draft.output_dir = undefined} title={$language === 'vi' ? 'Đặt lại mặc định' : 'Reset to default'}>
-                      ✕
+                    <button type="button" class="btn-subtle" on:click={() => draft.output_dir = undefined} disabled={pickingFolder} title={$language === 'vi' ? 'Đặt lại mặc định' : 'Reset to default'} aria-label={$t('Dùng thư mục gốc')}>
+                      <ArrowCounterClockwiseIcon size={16} weight="bold" aria-hidden="true" />
                     </button>
                   {/if}
                 </div>
@@ -861,41 +906,13 @@
 
             <div class="section-title">{$language === 'vi' ? 'TÙY CHỌN NÂNG CAO' : 'ADVANCED PRESETS'}</div>
             <div class="card">
-              <div class="setting-row">
-                <div class="row-info">
-                  <span class="row-title">{$language === 'vi' ? 'Tốc độ CPU encode (Preset)' : 'Encoding speed preset'}</span>
-                  <span class="row-desc">{$language === 'vi' ? 'Tỷ lệ đánh đổi giữa tốc độ xử lý và kích thước nén.' : 'Tradeoff between processing speed and file size.'}</span>
-                </div>
-                <div class="seg">
-                  <button type="button" class="seg-btn" class:seg-on={draft.video_preset === 'fast'} on:click={() => draft.video_preset = 'fast'}>Fast</button>
-                  <button type="button" class="seg-btn" class:seg-on={draft.video_preset === 'medium'} on:click={() => draft.video_preset = 'medium'}>Medium</button>
-                  <button type="button" class="seg-btn" class:seg-on={draft.video_preset === 'slow'} on:click={() => draft.video_preset = 'slow'}>Slow</button>
-                </div>
-              </div>
+{@render videoPresetControl()}
             </div>
 
           {:else if activeTab === 'shortcuts'}
             <!-- ── TAB: SHORTCUTS & GESTURES ────────────────────────────────── -->
             <div class="section-title">{$language === 'vi' ? 'THAO TÁC CỬ CHỈ' : 'GESTURES & SHORTCUTS'}</div>
-            <div class="card">
-              <div class="setting-row">
-                <div class="row-info">
-                  <span class="row-title">{$language === 'vi' ? 'Shift + Kéo tệp' : 'Shift + Drag & Drop'}</span>
-                  <span class="row-desc">{$language === 'vi' ? 'Giữ phím Shift trong khi kéo tệp bất kỳ từ Explorer để triệu hồi vòng quay chuyển đổi tức thì.' : 'Hold Shift while dragging files from Explorer to instantly summon the radial wheel.'}</span>
-                </div>
-                <span class="badge-key">Shift + Drag</span>
-              </div>
-
-              <div class="divider"></div>
-
-              <div class="setting-row">
-                <div class="row-info">
-                  <span class="row-title">{$language === 'vi' ? 'Hủy nhanh (Escape)' : 'Quick dismiss (Escape)'}</span>
-                  <span class="row-desc">{$language === 'vi' ? 'Nhấn Esc hoặc click ra ngoài để đóng ngay cửa sổ.' : 'Press Esc or click outside to dismiss.'}</span>
-                </div>
-                <span class="badge-key">Esc</span>
-              </div>
-            </div>
+            <div class="card">{@render shortcutControls()}            </div>
 
           {:else if activeTab === 'about'}
             <!-- ── TAB: ABOUT ───────────────────────────────────────────────── -->
@@ -921,12 +938,8 @@
                   <span class="row-title">GitHub Repository</span>
                   <span class="row-desc">rainaku/Vertex</span>
                 </div>
-                <button type="button" class="btn-subtle" on:click={() => openReleasePage()}>
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
-                    <polyline points="15 3 21 3 21 9"></polyline>
-                    <line x1="10" y1="14" x2="21" y2="3"></line>
-                  </svg>
+                <button type="button" class="btn-subtle" on:click={() => openLink('https://github.com/rainaku/Vertex')}>
+                  <ArrowSquareOutIcon size={16} weight="fill" aria-hidden="true" />
                   <span>{$language === 'vi' ? 'Mở GitHub' : 'Open GitHub'}</span>
                 </button>
               </div>
@@ -937,10 +950,10 @@
                   <span class="row-desc">{$language === 'vi' ? 'Xử lý cục bộ 100%, không thu thập dữ liệu cá nhân hay telemetry.' : '100% local processing, zero telemetry or personal data tracking.'}</span>
                 </div>
                 <div class="legal-links">
-                  <button type="button" class="btn-subtle" on:click={() => openReleasePage('https://github.com/rainaku/Vertex/blob/main/TERMS_OF_SERVICE.md')}>
+                  <button type="button" class="btn-subtle" on:click={() => openLink('https://github.com/rainaku/Vertex/blob/main/TERMS_OF_SERVICE.md')}>
                     <span>{$language === 'vi' ? 'Điều khoản' : 'Terms'}</span>
                   </button>
-                  <button type="button" class="btn-subtle" on:click={() => openReleasePage('https://github.com/rainaku/Vertex/blob/main/PRIVACY_POLICY.md')}>
+                  <button type="button" class="btn-subtle" on:click={() => openLink('https://github.com/rainaku/Vertex/blob/main/PRIVACY_POLICY.md')}>
                     <span>{$language === 'vi' ? 'Bảo mật' : 'Privacy'}</span>
                   </button>
                 </div>
@@ -1006,11 +1019,7 @@
                       <span class="spinner-inline"></span>
                       <span>{$language === 'vi' ? 'Đang kiểm tra…' : 'Checking…'}</span>
                     {:else}
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <polyline points="23 4 23 10 17 10"></polyline>
-                        <polyline points="1 20 1 14 7 14"></polyline>
-                        <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
-                      </svg>
+                      <ArrowsClockwiseIcon size={16} weight="bold" aria-hidden="true" />
                       <span>{$language === 'vi' ? 'Kiểm tra cập nhật' : 'Check for Updates'}</span>
                     {/if}
                   </button>
@@ -1045,7 +1054,7 @@
 
     <!-- ── Full-Width Bottom Action Footer (V-Notch Style) ──────────────────── -->
     <footer class="footer">
-      <button type="button" class="btn-reset" on:click={resetToDefault}>
+      <button type="button" class="btn-reset" on:click={resetToDefault} disabled={pickingFolder || isClosing}>
         {$language === 'vi' ? 'Đặt lại' : 'Reset'}
       </button>
 
@@ -1057,7 +1066,8 @@
           on:click={handleApply}
           disabled={pickingFolder || isClosing}
         >
-          {appliedSuccess ? ($language === 'vi' ? '✓ Đã áp dụng' : '✓ Applied') : ($language === 'vi' ? 'Áp dụng' : 'Apply')}
+          {#if appliedSuccess}<CheckIcon size={16} weight="bold" aria-hidden="true" />{/if}
+          {appliedSuccess ? ($language === 'vi' ? 'Đã áp dụng' : 'Applied') : ($language === 'vi' ? 'Áp dụng' : 'Apply')}
         </button>
 
         <button
@@ -1110,19 +1120,16 @@
 
   /* ── Shadow wrapper — uses GPU-composited filter so it never bleeds ────────── */
   .panel-shadow {
-    /* drop-shadow is composited at GPU layer: doesn't leak through transparent bg */
-    filter:
-      drop-shadow(0 1px 2px rgba(0, 0, 0, 0.55))
-      drop-shadow(0 6px 18px rgba(0, 0, 0, 0.55))
-      drop-shadow(0 16px 40px rgba(0, 0, 0, 0.6));
+    border-radius: 18px;
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6);
     will-change: transform, opacity;
     flex-shrink: 0;
   }
 
   /* ── Panel Shell (V-Notch Modal Style) ─────────────────────────────────────── */
   .panel {
-    width: 800px;
-    height: 540px;
+    width: min(800px, calc(100vw - 32px));
+    height: min(540px, calc(100vh - 32px));
     display: flex;
     flex-direction: column;
     background: #000000;
@@ -1130,7 +1137,7 @@
     border-radius: 18px;
     border: 1px solid rgba(255, 255, 255, 0.09);
     /* No box-shadow — handled by .panel-shadow filter above */
-    font-family: 'SF Pro Display', 'SF Pro Bold', 'SF Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-family: 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     font-weight: 700;
     -webkit-font-smoothing: antialiased;
     overflow: hidden;
@@ -1174,7 +1181,7 @@
     background: rgba(255, 255, 255, 0.08);
   }
 
-  .search-icon {
+  .search-box :global(.search-icon) {
     color: #666666;
     flex-shrink: 0;
   }
@@ -1197,6 +1204,10 @@
   }
 
   .btn-clear-search {
+    display: grid;
+    place-items: center;
+    min-width: 24px;
+    min-height: 24px;
     background: transparent;
     border: 0;
     color: #888888;
@@ -1259,8 +1270,8 @@
     display: grid;
     place-items: center;
     flex-shrink: 0;
-    width: 16px;
-    height: 16px;
+    width: 18px;
+    height: 18px;
   }
 
   .nav-label {
@@ -1288,13 +1299,13 @@
   }
 
   .btn-social {
-    width: 22px;
-    height: 22px;
+    width: 30px;
+    height: 30px;
     display: grid;
     place-items: center;
     background: transparent;
     border: 0;
-    color: #666666;
+    color: #8c959e;
     border-radius: 4px;
     cursor: pointer;
     transition: color 0.15s ease;
@@ -1345,12 +1356,12 @@
   }
 
   .btn-close {
-    width: 30px;
-    height: 30px;
+    width: 32px;
+    height: 32px;
     display: grid;
     place-items: center;
     background: rgba(255, 255, 255, 0.06);
-    color: #888888;
+    color: #b5bcc4;
     border: 1px solid rgba(255, 255, 255, 0.08);
     border-radius: 8px;
     cursor: pointer;
@@ -1736,10 +1747,11 @@
 
   .color-hidden {
     position: absolute;
+    inset: 0;
     opacity: 0;
-    width: 0;
-    height: 0;
-    pointer-events: none;
+    width: 100%;
+    height: 100%;
+    cursor: pointer;
   }
 
   /* ── Badges ───────────────────────────────────────────────────────────────── */
@@ -1808,6 +1820,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
+    gap: 6px;
     font-size: 13px;
     font-weight: 700;
     color: #c8c8c8;
@@ -1989,6 +2002,18 @@
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
     display: inline-block;
+  }
+
+  button:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  button:focus-visible,
+  input:focus-visible,
+  .content-scroll :global([role="slider"]:focus-visible) {
+    outline: 2px solid #ffffff !important;
+    outline-offset: 2px;
   }
 
   @keyframes spin {

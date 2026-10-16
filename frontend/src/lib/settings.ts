@@ -11,34 +11,53 @@ export function defaultOptions(): Options {
   };
 }
 
-export function normalizeOptions(value: Partial<Options>): Options {
+export function normalizeOptions(value: Partial<Options> | null | undefined): Options {
   const defaults = defaultOptions();
+  const src = value ?? {};
   const integer = (n: unknown, min: number, max: number, fallback: number) =>
     typeof n === 'number' && Number.isFinite(n) ? Math.min(max, Math.max(min, Math.round(n))) : fallback;
-  const dimension = (n: unknown) => typeof n === 'number' && n > 0 ? integer(n, 1, 32768, 1) : undefined;
+  const dimension = (n: unknown) =>
+    typeof n === 'number' && Number.isFinite(n) && n > 0 ? integer(n, 1, 32768, 1) : undefined;
   return {
     ...defaults,
-    quality: integer(value.quality, 1, 100, defaults.quality),
-    max_width: dimension(value.max_width), max_height: dimension(value.max_height),
-    output_dir: typeof value.output_dir === 'string' ? value.output_dir.trim() || undefined : undefined,
-    collision_policy: ['rename_with_suffix', 'fail_if_exists', 'overwrite'].includes(value.collision_policy ?? '')
-      ? value.collision_policy! : defaults.collision_policy,
-    jpeg_background: Array.isArray(value.jpeg_background) && value.jpeg_background.length === 3
-      ? value.jpeg_background.map(n => integer(n, 0, 255, 255)) as [number, number, number]
-      : defaults.jpeg_background,
-    gif_alpha_threshold: integer(value.gif_alpha_threshold, 1, 255, 128),
-    avif_speed: integer(value.avif_speed, 1, 10, 6),
-    video_codec: value.video_codec === 'h265' ? 'h265' : 'h264',
-    video_preset: value.video_preset === 'fast' || value.video_preset === 'slow' ? value.video_preset : 'medium',
-    video_crf: integer(value.video_crf, 18, 35, 23),
-    video_audio_kbps: integer(value.video_audio_kbps, 64, 320, 128),
+    quality: integer(src.quality, 1, 100, defaults.quality),
+    dpi: integer(src.dpi, 72, 600, defaults.dpi),
+    strip_metadata: typeof src.strip_metadata === 'boolean' ? src.strip_metadata : defaults.strip_metadata,
+    max_width: dimension(src.max_width),
+    max_height: dimension(src.max_height),
+    output_dir: typeof src.output_dir === 'string' ? src.output_dir.trim() || undefined : undefined,
+    collision_policy: ['rename_with_suffix', 'fail_if_exists', 'overwrite'].includes(src.collision_policy ?? '')
+      ? src.collision_policy!
+      : defaults.collision_policy,
+    jpeg_background:
+      Array.isArray(src.jpeg_background) && src.jpeg_background.length === 3
+        ? (src.jpeg_background.map((n) => integer(n, 0, 255, 255)) as [number, number, number])
+        : defaults.jpeg_background,
+    gif_alpha_threshold: integer(src.gif_alpha_threshold, 1, 255, defaults.gif_alpha_threshold ?? 128),
+    avif_speed: integer(src.avif_speed, 1, 10, defaults.avif_speed ?? 6),
+    video_codec: src.video_codec === 'h265' ? 'h265' : 'h264',
+    video_preset: src.video_preset === 'fast' || src.video_preset === 'slow' ? src.video_preset : 'medium',
+    video_crf: integer(src.video_crf, 18, 35, defaults.video_crf ?? 23),
+    video_audio_kbps: integer(src.video_audio_kbps, 64, 320, defaults.video_audio_kbps ?? 128),
   };
 }
 
 export function loadOptions(): Options {
   try {
-    return normalizeOptions(JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? '{}') ?? {});
+    const raw = localStorage.getItem(SETTINGS_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    return normalizeOptions(parsed && typeof parsed === 'object' ? parsed : {});
   } catch {
     return defaultOptions();
   }
+}
+
+export function saveOptions(value: Partial<Options>): Options {
+  const normalized = normalizeOptions(value);
+  try {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(normalized));
+  } catch {
+    // Ignore storage quota or private mode errors
+  }
+  return normalized;
 }

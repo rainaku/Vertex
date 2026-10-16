@@ -1,8 +1,17 @@
+export type Category =
+  | 'image'
+  | 'document'
+  | 'spreadsheet'
+  | 'presentation'
+  | 'audio'
+  | 'video'
+  | 'archive';
+
 export interface FormatInfo {
   format: string;
   label: string;
   extension: string;
-  category: string;
+  category: Category | (string & {});
   filename: string;
 }
 
@@ -10,9 +19,9 @@ export interface TargetFormatInfo {
   format: string;
   label: string;
   extension: string;
-  category: string;
+  category: Category | (string & {});
   available: boolean;
-  reason?: string;
+  reason?: string | null;
 }
 
 export interface BatchInfo {
@@ -23,22 +32,22 @@ export interface BatchInfo {
 export interface ProgressPayload {
   job_id: string;
   progress: number;
-  status: 'idle' | 'converting' | 'done' | 'error';
+  status: 'idle' | 'converting' | 'done' | 'cancelled' | 'error';
 }
 
 export interface ConvertResult {
-  cancelled?: boolean;
+  cancelled: boolean;
   success: boolean;
   output_path: string;
   target_format: string;
-  error?: string;
+  error?: string | null;
 }
 
 export interface Options {
   quality: number;
   dpi: number;
-  max_width?: number;
-  max_height?: number;
+  max_width?: number | null;
+  max_height?: number | null;
   strip_metadata: boolean;
   output_dir?: string;
   collision_policy: 'rename_with_suffix' | 'fail_if_exists' | 'overwrite';

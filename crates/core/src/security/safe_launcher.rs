@@ -6,100 +6,115 @@ pub struct SafeLauncher;
 impl SafeLauncher {
     /// Validates whether a URL has a safe protocol for opening in an external browser.
     /// Only allows `https://`, `http://`, and `mailto:`.
-    pub fn is_safe_url(url: &str) -> bool {
-        let trimmed = url.trim();
-        if trimmed.is_empty() {
+    pub fn is_safe_url(raw: &str) -> bool {
+        if raw.chars().any(char::is_control) {
             return false;
         }
-
-        // Explicitly reject dangerous pseudo-protocols and system commands
-        let lower = trimmed.to_lowercase();
-        if lower.starts_with("javascript:")
-            || lower.starts_with("data:")
-            || lower.starts_with("file:")
-            || lower.starts_with("vbscript:")
-            || lower.starts_with("cmd:")
-            || lower.starts_with("powershell:")
-            || lower.starts_with("shell:")
-            || lower.starts_with("ms-settings:")
-            || lower.starts_with("ms-appinstaller:")
-        {
+        let Ok(url) = url::Url::parse(raw.trim()) else {
             return false;
-        }
-
-        // Scheme validation
-        if lower.starts_with("https://")
-            || lower.starts_with("http://")
-            || lower.starts_with("mailto:")
-        {
-            // Ensure no invalid control characters or embedded newlines
-            if trimmed
-                .chars()
-                .any(|c| c.is_control() || c == '\n' || c == '\r')
-            {
-                return false;
+        };
+        match url.scheme() {
+            "http" | "https" => {
+                url.host_str().is_some() && url.username().is_empty() && url.password().is_none()
             }
-            return true;
+            "mailto" => !url.path().is_empty(),
+            _ => false,
         }
-
-        false
     }
 
-    /// Sanitizes and validates a filesystem path before revealing it in File Explorer.
-    /// Rejects direct network/device paths. Arguments are passed without a shell;
-    /// ordinary filename characters such as ampersands and semicolons are safe.
     pub fn sanitize_explorer_path(raw_path: &Path) -> Result<PathBuf, String> {
-        let path_str = raw_path.to_string_lossy();
-
-        // Reject control characters and invalid Windows filename characters.
-        if path_str.chars().any(|c| {
-            c.is_control() || c == '\n' || c == '\r' || c == '"' || c == '|' || c == '<' || c == '>'
-        }) {
-            return Err("Path contains illegal characters or command injection tokens".to_string());
-        }
-
-        // Reject UNC paths that start with \\ (prevent SMB credential leakage / remote execution)
-        if path_str.replace('/', "\\").starts_with(r"\\") {
-            return Err("UNC network paths are not permitted for security reasons".to_string());
-        }
-
-        #[cfg(windows)]
+        if raw_path
+            .as_os_str()
+            .to_string_lossy()
+            .chars()
+            .any(|c| c.is_control() || ['"', '|', '<', '>'].contains(&c))
         {
-            use std::os::windows::fs::MetadataExt;
-            // Inspect ancestors from the root before canonicalization can follow
-            // a junction/symlink to a remote share. This is a launch guard, not
-            // a sandbox against concurrent filesystem modifications.
-            let absolute = std::path::absolute(raw_path).map_err(|e| e.to_string())?;
-            let mut ancestors: Vec<_> = absolute.ancestors().collect();
-            ancestors.reverse();
-            for ancestor in ancestors {
-                let metadata = std::fs::symlink_metadata(ancestor).map_err(|e| e.to_string())?;
-                if metadata.file_attributes() & 0x400 != 0 {
-                    return Err("Reparse-point paths are not permitted for Explorer launch".into());
-                }
-            }
+            return Err("Path contains illegal characters".into());
         }
-
-        // Return canonicalized or verified path
+        #[cfg(windows)]
+        validate_local_path(raw_path, 0)?;
+        #[cfg(not(windows))]
+        if raw_path.to_string_lossy().starts_with("\\\\")
+            || raw_path.to_string_lossy().starts_with("//")
+        {
+            return Err("Network paths are not permitted".into());
+        }
         let canonical = raw_path
             .canonicalize()
-            .map_err(|e| format!("Failed to canonicalize path: {}", e))?;
-
-        // Strip \\?\ prefix on Windows if present for explorer compatibility
-        let canonical_str = canonical.to_string_lossy();
-        if canonical_str.starts_with(r"\\?\UNC\")
-            || (canonical_str.starts_with(r"\\") && !canonical_str.starts_with(r"\\?\"))
-        {
-            return Err("Network targets are not permitted".to_string());
+            .map_err(|e| format!("Failed to canonicalize path: {e}"))?;
+        #[cfg(windows)]
+        if !is_local_prefix(&canonical) {
+            return Err("Network targets are not permitted".into());
         }
-        let cleaned = if let Some(stripped) = canonical_str.strip_prefix(r"\\?\") {
-            PathBuf::from(stripped)
-        } else {
-            canonical
-        };
-
-        Ok(cleaned)
+        Ok(crate::path_utils::external_path(&canonical))
     }
+}
+
+#[cfg(windows)]
+fn is_local_prefix(path: &Path) -> bool {
+    use std::path::{Component, Prefix};
+    match path.components().next() {
+        Some(Component::Prefix(prefix)) => match prefix.kind() {
+            Prefix::Disk(_) | Prefix::VerbatimDisk(_) => true,
+            // Local mounted volumes are legal, including folder mount points.
+            Prefix::Verbatim(name) => name.to_string_lossy().starts_with("Volume{"),
+            _ => false,
+        },
+        _ => {
+            !(path.to_string_lossy().starts_with("\\\\")
+                || path.to_string_lossy().starts_with("//"))
+        }
+    }
+}
+
+#[cfg(windows)]
+fn validate_local_path(path: &Path, depth: u8) -> Result<(), String> {
+    use std::os::windows::fs::{MetadataExt, OpenOptionsExt};
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::Storage::FileSystem::{
+        FileAttributeTagInfo, GetFileInformationByHandleEx, FILE_ATTRIBUTE_TAG_INFO,
+    };
+    if depth > 32 || !is_local_prefix(path) {
+        return Err("Network paths or cyclic links are not permitted".into());
+    }
+    let absolute = std::path::absolute(path).map_err(|e| e.to_string())?;
+    let ancestors: Vec<_> = absolute.ancestors().collect();
+    for ancestor in ancestors.into_iter().rev() {
+        let metadata = std::fs::symlink_metadata(ancestor).map_err(|e| e.to_string())?;
+        if metadata.file_attributes() & 0x400 == 0 {
+            continue;
+        }
+        // Query the tag without following it. Cloud/dedup tags do not redirect
+        // names; reject only a name-surrogate that resolves to a network target.
+        let file = std::fs::OpenOptions::new()
+            .read(true)
+            .access_mode(0)
+            .custom_flags(0x00200000 | 0x02000000)
+            .open(ancestor)
+            .map_err(|e| e.to_string())?;
+        let mut info: FILE_ATTRIBUTE_TAG_INFO = unsafe { std::mem::zeroed() };
+        if unsafe {
+            GetFileInformationByHandleEx(
+                file.as_raw_handle(),
+                FileAttributeTagInfo,
+                (&mut info as *mut FILE_ATTRIBUTE_TAG_INFO).cast(),
+                std::mem::size_of_val(&info) as u32,
+            )
+        } == 0
+        {
+            return Err(std::io::Error::last_os_error().to_string());
+        }
+        if info.ReparseTag & 0x20000000 != 0 {
+            let target = std::fs::read_link(ancestor).map_err(|e| e.to_string())?;
+            let resolved = if target.is_absolute() {
+                target
+            } else {
+                crate::path_utils::parent_dir(ancestor).join(target)
+            };
+            validate_local_path(&resolved, depth + 1)?;
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]

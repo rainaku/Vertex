@@ -1,5 +1,7 @@
 pub mod commands;
 pub mod drag_detector;
+#[cfg(any(windows, test))]
+mod drag_gesture;
 mod logging;
 mod wheel_window;
 
@@ -23,11 +25,25 @@ pub fn run() {
 
     let state = AppState {
         registry: Arc::new(Registry::default()),
+        conversion_slots: Arc::new(tokio::sync::Semaphore::new(
+            std::thread::available_parallelism()
+                .map(|n| (n.get() / 4).clamp(1, 2))
+                .unwrap_or(1),
+        )),
         active_cancels: Arc::new(Mutex::new(HashMap::new())),
     };
 
     tauri::Builder::default()
         .manage(state)
+        .on_webview_event(|webview, event| {
+            #[cfg(windows)]
+            if webview.label() == "main" {
+                let tauri::WebviewEvent::DragDrop(event) = event else { return; };
+                drag_detector::on_native_drag_event(webview.app_handle(), event);
+            }
+            #[cfg(not(windows))]
+            let _ = (webview, event);
+        })
         .plugin(tauri_plugin_autostart::Builder::new().build())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
@@ -80,13 +96,10 @@ pub fn run() {
                         }
                     }
                     "settings" => {
-                        let _ = crate::commands::prepare_settings_window(app.clone());
                         if let Some(win) = app.get_webview_window("main") {
                             if let Err(error) =
-                                wheel_window::show(&win, None, true).and_then(|_| {
-                                    win.emit("open_advanced_settings", ())
+                                win.emit("open_advanced_settings", ())
                                         .map_err(|e| e.to_string())
-                                 })
                             {
                                 tracing::warn!(%error, "Could not open advanced settings");
                             }
@@ -114,8 +127,9 @@ pub fn run() {
                 })
                 .build(app)?;
 
-            // Main window setup: start hidden and in passthrough mode
+            // Hidden native windows already let mouse input reach the desktop.
             if let Some(window) = app.get_webview_window("main") {
+                wheel_window::initialize(&window).map_err(std::io::Error::other)?;
                 wheel_window::hide(&window).map_err(std::io::Error::other)?;
 
                 #[cfg(target_os = "macos")]

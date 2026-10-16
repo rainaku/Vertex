@@ -22,6 +22,9 @@ $AppName = "vertex-app"
 $WorkspaceRoot = $PSScriptRoot
 $FrontendDir = Join-Path $WorkspaceRoot "frontend"
 $BundleDir = Join-Path $WorkspaceRoot "target\release\bundle"
+. (Join-Path $WorkspaceRoot 'scripts\BuildTools.ps1')
+Push-Location $WorkspaceRoot
+try {
 
 Write-Host ""
 Write-Host "=================================================" -ForegroundColor DarkCyan
@@ -93,8 +96,8 @@ if (-not (Test-Path (Join-Path $FrontendDir "node_modules"))) {
 # --- 3. Xu ly tuy chon -Clean ---
 if ($Clean) {
     Write-Host ">>> [3/5] Dang don dep du lieu build cu (-Clean)..." -ForegroundColor Cyan
-    Remove-Item (Join-Path $FrontendDir "dist") -Recurse -Force -ErrorAction SilentlyContinue
-    Remove-Item $BundleDir -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-VertexBuildDirectory -LiteralPath (Join-Path $FrontendDir "dist") -WorkspaceRoot $WorkspaceRoot
+    Remove-VertexBuildDirectory -LiteralPath $BundleDir -WorkspaceRoot $WorkspaceRoot
     cargo clean -p vertex-app
     Write-Host "    Don dep hoan tat." -ForegroundColor Green
 } else {
@@ -232,8 +235,9 @@ if ($foundInstallers.Count -gt 0) {
                     if ($foundKey) { $signParams["PrivateKeyPath"] = $foundKey }
                     & $signScript @signParams
                 } elseif ($pwshCmd) {
-                    $keyArg = if ($foundKey) { "-PrivateKeyPath '$foundKey'" } else { "" }
-                    & $pwshCmd.Source -NoProfile -ExecutionPolicy Bypass -Command "& '$signScript' -InstallerPath '$($file.FullName)' -Version '$appVersion' $keyArg"
+                    $signArgs = @('-NoProfile', '-File', $signScript, '-InstallerPath', $file.FullName, '-Version', $appVersion)
+                    if ($foundKey) { $signArgs += @('-PrivateKeyPath', $foundKey) }
+                    & $pwshCmd.Source @signArgs
                 } else {
                     Write-Host "    [!] Can PowerShell 7 (pwsh) de ky manifest." -ForegroundColor Yellow
                 }
@@ -273,11 +277,10 @@ if ($foundInstallers.Count -gt 0) {
 
     # Kiem tra va dam bao latest.json dung chuan de phuc vu auto-updater
     $outLatestJson = Join-Path $releaseOutDir "latest.json"
-    $sigFile = Get-ChildItem -Path $releaseOutDir | Where-Object { $_.Name -like "*.exe.sig" -or $_.Name -like "*.zip.sig" } | Select-Object -First 1
-    $zipOrExe = Get-ChildItem -Path $releaseOutDir -Filter "*.zip" | Select-Object -First 1
-    if (-not $zipOrExe) {
-        $zipOrExe = $primaryExe
-    }
+    $zipOrExe = Get-ChildItem -LiteralPath $releaseOutDir -File |
+        Where-Object { $_.Extension -in @('.zip', '.exe') -and (Test-Path -LiteralPath ($_.FullName + '.sig')) } |
+        Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    $sigFile = if ($zipOrExe) { Get-Item -LiteralPath ($zipOrExe.FullName + '.sig') } else { $null }
 
     if ($sigFile -and $zipOrExe) {
         try {
@@ -293,7 +296,7 @@ if ($foundInstallers.Count -gt 0) {
                     }
                 }
             }
-            $manifestObj | ConvertTo-Json -Depth 5 | Set-Content $outLatestJson -Encoding UTF8
+            [IO.File]::WriteAllText($outLatestJson, ($manifestObj | ConvertTo-Json -Depth 5), [Text.UTF8Encoding]::new($false))
             if ($copiedFiles -notcontains "latest.json") {
                 $copiedFiles += "latest.json"
             }
@@ -315,7 +318,7 @@ if ($foundInstallers.Count -gt 0) {
     # Mo thu muc / Chon file trong Explorer neu co tham so -Open
     if ($Open) {
         Write-Host "`n>>> Dang mo Explorer va chon file setup..." -ForegroundColor Cyan
-        explorer.exe /select, "$($primaryExe.FullName)"
+        Show-VertexFileInExplorer -LiteralPath $primaryExe.FullName
     } else {
         Write-Host "`n[Goi y] Ban co the dung: .\b.ps1 -Open     (De tu dong mo thu muc chua file setup)" -ForegroundColor DarkGray
         Write-Host "[Goi y] Ban co the dung: .\b.ps1 -Run      (De tu dong chay thu bo cai dat sau khi build)" -ForegroundColor DarkGray
@@ -332,3 +335,5 @@ if ($foundInstallers.Count -gt 0) {
 }
 
 Write-Host ""
+
+} finally { Pop-Location }

@@ -4,7 +4,8 @@
   import RadialWheel from './lib/RadialWheel.svelte';
   import OptionsPanel from './lib/OptionsPanel.svelte';
   import { defaultOptions, loadOptions } from './lib/settings';
-import { checkForUpdates } from './lib/updater';
+  import { runConversionBatch } from './lib/conversion-batch';
+  import { checkForUpdates } from './lib/updater';
   import {
     detectFile,
     getAvailableTargets,
@@ -12,20 +13,31 @@ import { checkForUpdates } from './lib/updater';
     convertFile,
     cancelJob,
     listenProgress,
-    sendDesktopNotification,
     setWindowPassthrough,
     hideWheelWindow,
-    forceHideWheelWindow,
     setConvertingState,
-    centerWindow,
     prepareSettingsWindow,
     restoreWheelWindow,
     isTauri,
   } from './lib/tauri-bridge';
-  import { hitTest } from './lib/geometry';
+  import { hitTestClient } from './lib/geometry';
   import type { TargetFormatInfo, Options, FormatInfo } from './lib/types';
 
   // ─── State ───────────────────────────────────────────────────────────────────
+  let destroyed = false;
+  let statusTimer: ReturnType<typeof setTimeout>;
+  let updateTimer: ReturnType<typeof setTimeout>;
+  let dragCooldownTimer: ReturnType<typeof setTimeout>;
+  let batchCompleted = 0;
+  let batchTotal = 1;
+  let fileRevision = 0;
+  const ownedListeners = new Set<() => void>();
+  function keepListener(cleanup: () => void) {
+    if (destroyed) cleanup();
+    else ownedListeners.add(cleanup);
+    return () => { if (ownedListeners.delete(cleanup)) cleanup(); };
+  }
+  const scopedProgress: typeof listenProgress = (callback) => listenProgress(callback).then(keepListener);
   let formats: TargetFormatInfo[] = [];
   let allAvailableFormats: TargetFormatInfo[] = [];
   let activeIndex: number = -1;
@@ -48,6 +60,16 @@ import { checkForUpdates } from './lib/updater';
 
   // Whether a file is being dragged over our window
   let isDragging: boolean = false;
+  let dragInsideWebview = false;
+  let dragReleased = false;
+  let dragCancelled = false;
+  let dropAccepted = false;
+  let dragRevision = 0;
+  let loadingFiles: { paths: string[]; ready: Promise<boolean> } | null = null;
+
+  function isCurrentDrag(revision: number) {
+    return revision === dragRevision && !dragCancelled && !destroyed && !settingsVisible;
+  }
 
   // Pagination
   let page: number = 0;
@@ -61,14 +83,17 @@ import { checkForUpdates } from './lib/updater';
   let unlistenUpdateAvailable: (() => void) | null = null;
 
   async function openSettings() {
-    if (status === 'converting') return;
+    if (status === 'converting' || settingsVisible) return;
     clearDragDwell();
+    cancelClose();
+    dragRevision++;
+    dragCancelled = true;
+    dragInsideWebview = false;
     isDragging = false;
     wheelVisible = false;
     wheelClosing = false;
-    await prepareSettingsWindow();
-    await setWindowPassthrough(false);
     settingsVisible = true;
+    await prepareSettingsWindow();
   }
 
   async function closeSettings() {
@@ -77,8 +102,6 @@ import { checkForUpdates } from './lib/updater';
     wheelClosing = false;
     isDragging = false;
     clearDragDwell();
-    await setWindowPassthrough(true);
-    await forceHideWheelWindow();
     await restoreWheelWindow();
   }
 
@@ -122,7 +145,7 @@ import { checkForUpdates } from './lib/updater';
         handleNextPage();
         dragDwellTimer = null;
         dragDwellCooldown = true;
-        setTimeout(() => {
+        dragCooldownTimer = setTimeout(() => {
           dragDwellCooldown = false;
         }, 750);
       }, 260);
@@ -163,6 +186,10 @@ import { checkForUpdates } from './lib/updater';
   async function hideWheel() {
     if (settingsVisible) return;
     if (wheelClosing) return;
+    dragRevision++;
+    dragCancelled = true;
+    dragInsideWebview = false;
+    fileRevision++;
     const revision = ++visibilityRevision;
     const generation = nativeGeneration;
     wheelClosing = true;
@@ -199,96 +226,92 @@ import { checkForUpdates } from './lib/updater';
 
   // ─── File handling ───────────────────────────────────────────────────────────
 
-  async function handleFileLoaded(paths: string[]) {
-    if (paths.length === 0) return;
+  async function handleFileLoaded(paths: string[]): Promise<boolean> {
+    if (!paths.length || status === 'converting') return false;
+    const revision = ++fileRevision;
+    currentFilePaths = [];
+    currentFile = null;
+    allAvailableFormats = [];
+    formats = [];
     conversionError = '';
-    currentFilePaths = paths;
-
-    if (paths.length === 1) {
-      try {
-        const info = await detectFile(paths[0]);
-        currentFile = info;
-        sourceFormatLabel = info.label;
-        const targets = await getAvailableTargets(info.format);
-        allAvailableFormats = orderTargets(targets, [info]);
-        page = 0;
-        updatePagedFormats();
-      } catch (e) {
-        console.error('File detection failed:', e);
-      }
-    } else {
-      try {
-        const batch = await getBatchInfo(paths);
-        currentFile = batch.files[0] || null;
-        sourceFormatLabel = `BATCH (${paths.length})`;
-        allAvailableFormats = orderTargets(batch.common_targets, batch.files);
-        page = 0;
-        updatePagedFormats();
-      } catch (e) {
-        console.error('Batch detection failed:', e);
-      }
+    try {
+      const batch = paths.length === 1
+        ? await (async () => {
+            const file = await detectFile(paths[0]);
+            return { files: [file], common_targets: await getAvailableTargets(file.format) };
+          })()
+        : await getBatchInfo(paths);
+      if (destroyed || revision !== fileRevision) return false;
+      currentFilePaths = [...paths];
+      status = 'idle';
+      convertingIndex = -1;
+      currentFile = batch.files[0] ?? null;
+      sourceFormatLabel = paths.length === 1 ? currentFile?.label ?? null : `BATCH (${paths.length})`;
+      allAvailableFormats = orderTargets(batch.common_targets, batch.files);
+      page = 0;
+      updatePagedFormats();
+      return true;
+    } catch (error) {
+      if (destroyed || revision !== fileRevision) return false;
+      conversionError = String(error);
+      status = 'error';
+      return false;
     }
   }
 
-  // ─── Conversion ──────────────────────────────────────────────────────────────
-
   async function startConversion(targetFmt: TargetFormatInfo, index: number) {
-    if (!currentFilePaths.length || settingsVisible || status === 'converting') return;
-    conversionError = '';
+    if (!currentFilePaths.length || settingsVisible || status === 'converting' || !targetFmt.available) return;
+    const paths = [...currentFilePaths];
     const conversionOptions = structuredClone(options);
-
+    conversionError = '';
     clearDragDwell();
+    clearTimeout(statusTimer);
     convertingIndex = index;
     activeIndex = index;
     status = 'converting';
-    progress = 0.05;
+    progress = 0;
+    batchCompleted = 0;
+    batchTotal = paths.length;
+    stopping = false;
     cancelClose();
     wheelVisible = true;
-    const jobId = `job_${Date.now()}`;
-    activeJobId = jobId;
-    stopping = false;
-    const firstPath = currentFilePaths[0];
-
     try {
-      const res = await convertFile(jobId, firstPath, targetFmt.format, conversionOptions);
-      if (res.success) {
-        status = 'done';
-        progress = 1.0;
-
-        setTimeout(async () => {
-          if (status === 'done') {
-            status = 'idle';
-            convertingIndex = -1;
-            await setConvertingState(false);
-            await hideWheel();
-          }
-        }, 1200);
-      } else if (res.cancelled) {
+      await setConvertingState(true);
+      const result = await runConversionBatch(paths, {
+        stopped: () => stopping || destroyed,
+        convert: (path, _index) => {
+          activeJobId = crypto.randomUUID();
+          return convertFile(activeJobId, path, targetFmt.format, conversionOptions);
+        },
+        completed: (count) => { batchCompleted = count; progress = count / batchTotal; },
+      });
+      if (destroyed) return;
+      if (result.failures.length) {
+        conversionError = result.failures.map(({ path, error }) => `${path.split(/[/\\]/).pop()}: ${error}`).join('\n');
+        status = 'error';
+        // Keep errors visible until the user dismisses or retries.
+      } else if (result.cancelled) {
         status = 'idle';
         convertingIndex = -1;
         activeIndex = -1;
         progress = 0;
         await hideWheel();
       } else {
-        conversionError = res.error || ($language === 'vi' ? 'Chuyển đổi thất bại.' : 'Conversion failed.');
-        status = 'error';
-        setTimeout(async () => {
+        status = 'done';
+        progress = 1;
+        statusTimer = setTimeout(() => {
           status = 'idle';
           convertingIndex = -1;
-          await setConvertingState(false);
-        }, 2000);
+          void hideWheel();
+        }, 1200);
       }
-    } catch (e: any) {
-      conversionError = String(e);
+    } catch (error) {
+      conversionError = String(error);
       status = 'error';
-      setTimeout(async () => {
-        status = 'idle';
-        convertingIndex = -1;
-        await setConvertingState(false);
-      }, 2000);
     } finally {
       activeJobId = null;
       stopping = false;
+      await setConvertingState(false);
     }
   }
 
@@ -319,7 +342,7 @@ import { checkForUpdates } from './lib/updater';
     window.addEventListener('keydown', handleKeyDown);
 
     // Subscribe to conversion progress
-    unlistenProgress = await listenProgress((payload) => {
+    unlistenProgress = await scopedProgress((payload) => {
       if (payload.job_id !== activeJobId) return;
       if (stopping) {
         // Also covers a stop click before the conversion command registered
@@ -327,19 +350,24 @@ import { checkForUpdates } from './lib/updater';
         void cancelJob(payload.job_id).catch(error => console.warn('Cancel failed:', error));
         return;
       }
-      progress = payload.progress;
+      if (payload.status === 'converting') progress = (batchCompleted + payload.progress) / batchTotal;
     });
 
+    if (destroyed) return;
     // Tauri drag-and-drop & global shortcut events
     if (isTauri) {
       try {
         const { getCurrentWebview } = await import('@tauri-apps/api/webview');
-        const { listen } = await import('@tauri-apps/api/event');
+        const { listen: listenEvent } = await import('@tauri-apps/api/event');
+        const listen = <T,>(name: string, callback: (event: { payload: T }) => void) =>
+          listenEvent<T>(name, callback).then(keepListener);
         const webview = getCurrentWebview();
         unlistenSettings = await listen('open_advanced_settings', () => { void openSettings(); });
 
         unlistenWheelShown = await listen<{ generation: number; focus: boolean }>('wheel_shown', (event) => {
           nativeGeneration = event.payload.generation;
+          dragRevision++;
+          dragCancelled = false;
           cancelClose();
           if (event.payload.focus && !settingsVisible) void showWheel();
         });
@@ -358,12 +386,22 @@ import { checkForUpdates } from './lib/updater';
         // 1. Listen for global Shift+Drag events from Rust background thread
         unlistenDragStart = await listen('shift_drag_start', () => {
           if (settingsVisible) return;
+          dragRevision++;
+          fileRevision++;
+          loadingFiles = null;
+          dragCancelled = false;
+          dragReleased = false;
+          dragInsideWebview = false;
+          dropAccepted = false;
           isDragging = true;
         });
 
         unlistenDragEnd = await listen('shift_drag_end', () => {
           if (settingsVisible) return;
-          if (status !== 'converting') {
+          dragReleased = true;
+          // Mouse-up is not an OLE Drop. Keep the target alive until Drop/Leave,
+          // including when a drop is still waiting for format detection.
+          if (!dragInsideWebview && !dropAccepted && status !== 'converting' && status !== 'done') {
             hideWheel();
           }
         });
@@ -377,7 +415,7 @@ import { checkForUpdates } from './lib/updater';
 
         // 2. Tauri webview drag-and-drop events (triggered when files hover over webview)
         unlistenDragDrop = await webview.onDragDropEvent(async (event) => {
-          if (settingsVisible) return;
+          if (settingsVisible || dragCancelled || destroyed) return;
           if (status === 'converting' || status === 'done') {
             clearDragDwell();
             return;
@@ -386,13 +424,20 @@ import { checkForUpdates } from './lib/updater';
           const dpr = window.devicePixelRatio || 1;
 
           if (event.payload.type === 'enter') {
+            const revision = ++dragRevision;
             const paths = event.payload.paths;
+            dragInsideWebview = true;
+            dragReleased = false;
+            dropAccepted = false;
             isDragging = true;
-            await handleFileLoaded(paths);
-            if (!isDragging || wheelClosing || settingsVisible) return;
+            const pendingFiles = { paths: [...paths], ready: handleFileLoaded(paths) };
+            loadingFiles = pendingFiles;
+            await pendingFiles.ready;
+            if (!isCurrentDrag(revision) || !isDragging || wheelClosing) return;
             await showWheel();
           } else if (event.payload.type === 'over') {
             if (wheelClosing) return;
+            dragInsideWebview = true;
             if (!wheelVisible) {
               await showWheel();
             }
@@ -400,13 +445,7 @@ import { checkForUpdates } from './lib/updater';
             // Convert physical coordinates to CSS logical coordinates
             const cssX = pos.x / dpr;
             const cssY = pos.y / dpr;
-            // Scale = 0.55 for compact wheel (286px diameter)
-            const SCALE = 0.55;
-            const centerX = window.innerWidth / 2;
-            const centerY = window.innerHeight / 2;
-            const localX = (cssX - centerX) / SCALE + 260;
-            const localY = (cssY - centerY) / SCALE + 260;
-            const hit = hitTest(localX, localY, 260, 260, 70, 244, 8);
+            const hit = hitTestClient(cssX, cssY, wheelElement.getBoundingClientRect());
             activeIndex = hit.type === 'petal' ? hit.index : -1;
 
             if (hit.type === 'petal' && hit.index === 7 && hasMorePages) {
@@ -415,45 +454,50 @@ import { checkForUpdates } from './lib/updater';
               clearDragDwell();
             }
           } else if (event.payload.type === 'drop') {
+            if (dropAccepted) return;
+            const revision = dragRevision;
+            dropAccepted = true;
             const paths = event.payload.paths;
             const pos = event.payload.position;
+            // Snapshot geometry before any await/transition can move the wheel.
+            const hit = hitTestClient(pos.x / dpr, pos.y / dpr, wheelElement.getBoundingClientRect());
+            cancelClose();
+            dragInsideWebview = false;
             isDragging = false;
             clearDragDwell();
 
-            if (wheelVisible) {
-              const cssX = pos.x / dpr;
-              const cssY = pos.y / dpr;
-              const SCALE = 0.55;
-              const centerX = window.innerWidth / 2;
-              const centerY = window.innerHeight / 2;
-              const localX = (cssX - centerX) / SCALE + 260;
-              const localY = (cssY - centerY) / SCALE + 260;
-              const hit = hitTest(localX, localY, 260, 260, 70, 244, 8);
+            const sameFiles = loadingFiles?.paths.length === paths.length &&
+              loadingFiles.paths.every((path, i) => path === paths[i]);
+            const ready = await (sameFiles ? loadingFiles!.ready : handleFileLoaded(paths));
+            if (!isCurrentDrag(revision)) return;
+            await showWheel();
+            if (!isCurrentDrag(revision)) return;
+            if (!ready) return; // Keep detection errors visible.
 
-              // Dropping directly on the "..." petal flips page and stays open
-              if (hit.type === 'petal' && hit.index === 7 && hasMorePages) {
-                handleNextPage();
+            // Dropping directly on the "..." petal flips page and stays open.
+            if (hit.type === 'petal' && hit.index === 7 && hasMorePages) {
+              handleNextPage();
+              return;
+            }
+
+            if (hit.type === 'petal' && hit.index >= 0 && hit.index < formats.length) {
+              const target = formats[hit.index];
+              if (target && target.available) {
+                conversionError = '';
+                await startConversion(target, hit.index);
                 return;
               }
-
-              if (hit.type === 'petal' && hit.index >= 0 && hit.index < formats.length) {
-                const target = formats[hit.index];
-                if (target && target.available) {
-                  conversionError = '';
-    currentFilePaths = paths;
-                  startConversion(target, hit.index);
-                  return;
-                }
-              }
             }
-            hideWheel();
+            await hideWheel();
           } else if (event.payload.type === 'leave') {
+            dragInsideWebview = false;
             clearDragDwell();
             activeIndex = -1;
-            // Do not hide wheel on leave: spurious leave events fire when cursor moves between DOM elements.
-            // The wheel closes when the user drops/releases the mouse button or presses Esc.
+            // Leave while the button is held allows re-entry. Leave after the
+            // release completes a drag that was dropped outside the webview.
+            if (dragReleased && !dropAccepted) await hideWheel();
           }
-        });
+        }).then(keepListener);
         unlistenUpdateAvailable = await listen('update_available', () => {
           void checkForUpdates(false);
         });
@@ -463,12 +507,23 @@ import { checkForUpdates } from './lib/updater';
     }
 
     // Auto-check for updates 10 seconds after startup in background
-    setTimeout(() => {
+    if (destroyed) return;
+    updateTimer = setTimeout(() => {
       void checkForUpdates(false);
     }, 10000);
   });
 
   onDestroy(() => {
+    destroyed = true;
+    for (const cleanup of ownedListeners) cleanup();
+    ownedListeners.clear();
+    fileRevision++;
+    clearDragDwell();
+    clearTimeout(statusTimer);
+    clearTimeout(updateTimer);
+    clearTimeout(dragCooldownTimer);
+    if (activeJobId) void cancelJob(activeJobId);
+    void setConvertingState(false);
     if (unlistenSettings) unlistenSettings();
     cancelClose();
     window.removeEventListener('keydown', handleKeyDown);
@@ -501,7 +556,7 @@ import { checkForUpdates } from './lib/updater';
       {hasMorePages}
       {page}
       {totalPages}
-      onSelectFormat={(fmt) => startConversion(fmt, activeIndex)}
+      onSelectFormat={(fmt, index) => startConversion(fmt, index)}
       onHoverChange={(idx) => activeIndex = idx}
       onNextPage={handleNextPage}
       {stopping}
@@ -526,7 +581,6 @@ import { checkForUpdates } from './lib/updater';
     onClose={closeSettings}
     onSave={(value) => {
       options = value;
-      void closeSettings();
     }}
   />
 {/if}
@@ -542,7 +596,7 @@ import { checkForUpdates } from './lib/updater';
     display: flex;
     align-items: center;
     justify-content: center;
-    pointer-events: none; /* JS-side passthrough; OS passthrough via set_ignore_cursor_events */
+    pointer-events: none; /* Native window visibility owns desktop input capture. */
     overflow: hidden;
   }
 

@@ -15,14 +15,18 @@ impl CancelToken {
         }
     }
 
+    #[inline]
     pub fn cancel(&self) {
-        self.cancelled.store(true, Ordering::SeqCst);
+        // This flag carries no other shared data; atomic coherence suffices.
+        self.cancelled.store(true, Ordering::Relaxed);
     }
 
+    #[inline]
     pub fn is_cancelled(&self) -> bool {
-        self.cancelled.load(Ordering::SeqCst)
+        self.cancelled.load(Ordering::Relaxed)
     }
 
+    #[inline]
     pub fn check(&self) -> Result<()> {
         if self.is_cancelled() {
             Err(VertexError::Cancelled)
