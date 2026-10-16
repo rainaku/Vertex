@@ -178,7 +178,7 @@ if ($foundInstallers.Count -gt 0) {
     
     # Lay phien ban tu tauri.conf.json hoac Cargo.toml
     $tauriConfPath = Join-Path $WorkspaceRoot "crates\app\tauri.conf.json"
-    $appVersion = "0.1.0"
+    $appVersion = "1.2.0"
     if (Test-Path $tauriConfPath) {
         try {
             $confJson = Get-Content $tauriConfPath -Raw | ConvertFrom-Json
