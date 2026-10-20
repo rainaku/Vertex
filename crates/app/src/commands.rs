@@ -20,6 +20,7 @@ pub struct TargetFormatInfo {
     pub category: Category,
     pub available: bool,
     pub reason: Option<String>,
+    pub notices: Vec<vertex_core::contract::ConversionNotice>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -75,6 +76,13 @@ pub fn set_app_language(
 }
 
 #[tauri::command]
+pub fn get_input_formats(
+    state: tauri::State<'_, AppState>,
+) -> Vec<vertex_core::contract::FormatDefinition> {
+    state.registry.source_formats()
+}
+
+#[tauri::command]
 pub async fn detect_file(path: String) -> Result<FormatInfo, String> {
     tokio::task::spawn_blocking(move || {
         let p = vertex_core::path_utils::ipc_path(&path)?;
@@ -102,7 +110,10 @@ pub async fn get_available_targets(
     from: Format,
     state: tauri::State<'_, AppState>,
 ) -> Result<Vec<TargetFormatInfo>, String> {
-    let targets = state.registry.available_targets(from);
+    let registry = state.registry.clone();
+    let targets = tokio::task::spawn_blocking(move || registry.available_targets(from))
+        .await
+        .map_err(|e| e.to_string())?;
     let list = targets
         .into_iter()
         .map(|(fmt, avail)| {
@@ -117,6 +128,9 @@ pub async fn get_available_targets(
                 category: fmt.category(),
                 available,
                 reason,
+                notices: vertex_core::contract::conversion_notice(from, fmt)
+                    .into_iter()
+                    .collect(),
             }
         })
         .collect();
@@ -168,6 +182,15 @@ pub async fn get_batch_info(
                     category: fmt.category(),
                     available,
                     reason,
+                    notices: formats
+                        .iter()
+                        .filter_map(|from| vertex_core::contract::conversion_notice(*from, fmt))
+                        .fold(Vec::new(), |mut notices, notice| {
+                            if !notices.contains(&notice) {
+                                notices.push(notice);
+                            }
+                            notices
+                        }),
                 }
             })
             .collect();
@@ -227,7 +250,17 @@ pub async fn convert_file(
 ) -> Result<ConvertResult, String> {
     let input = vertex_core::path_utils::ipc_path(&input_path)?;
     let registry = state.registry.clone();
-    let opts = options.unwrap_or_default().normalized();
+    let mut opts = options.unwrap_or_default().normalized();
+    opts.output_dir = opts
+        .output_dir
+        .as_ref()
+        .map(|path| {
+            let raw = path
+                .to_str()
+                .ok_or_else(|| "Output directory must be valid Unicode".to_string())?;
+            vertex_core::path_utils::ipc_path(raw)
+        })
+        .transpose()?;
     let cancel = CancelToken::new();
     let guard = JobGuard::register(&job_id, &cancel, &state.active_cancels)?;
     // Register before queuing, so queued jobs can be cancelled as well.

@@ -1,14 +1,13 @@
 import type { Options } from './types';
+import contract from './conversion-contract.json';
+
+const limits = contract.limits;
 
 export const SETTINGS_KEY = 'vertex.conversion-options.v1';
 
 export function defaultOptions(): Options {
-  return {
-    quality: 85, dpi: 200, strip_metadata: true,
-    collision_policy: 'rename_with_suffix',
-    jpeg_background: [255, 255, 255], gif_alpha_threshold: 128, avif_speed: 6,
-    video_codec: 'h264', video_preset: 'medium', video_crf: 23, video_audio_kbps: 128,
-  };
+  const { max_width: _width, max_height: _height, output_dir: _directory, ...defaults } = structuredClone(contract.default_options);
+  return defaults as Options;
 }
 
 export function normalizeOptions(value: Partial<Options> | null | undefined): Options {
@@ -17,15 +16,16 @@ export function normalizeOptions(value: Partial<Options> | null | undefined): Op
   const integer = (n: unknown, min: number, max: number, fallback: number) =>
     typeof n === 'number' && Number.isFinite(n) ? Math.min(max, Math.max(min, Math.round(n))) : fallback;
   const dimension = (n: unknown) =>
-    typeof n === 'number' && Number.isFinite(n) && n > 0 ? integer(n, 1, 32768, 1) : undefined;
+    typeof n === 'number' && Number.isFinite(n) && n > 0 ? integer(n, limits.max_width.min, limits.max_width.max, 1) : undefined;
+  const bounded = (key: keyof typeof limits, n: unknown, fallback: number) => integer(n, limits[key].min, limits[key].max, fallback);
   return {
     ...defaults,
-    quality: integer(src.quality, 1, 100, defaults.quality),
-    dpi: integer(src.dpi, 72, 600, defaults.dpi),
+    quality: bounded('quality', src.quality, defaults.quality),
+    dpi: bounded('dpi', src.dpi, defaults.dpi),
     strip_metadata: typeof src.strip_metadata === 'boolean' ? src.strip_metadata : defaults.strip_metadata,
     max_width: dimension(src.max_width),
     max_height: dimension(src.max_height),
-    output_dir: typeof src.output_dir === 'string' ? src.output_dir.trim() || undefined : undefined,
+    output_dir: typeof src.output_dir === 'string' && src.output_dir.trim() ? src.output_dir : undefined,
     collision_policy: ['rename_with_suffix', 'fail_if_exists', 'overwrite'].includes(src.collision_policy ?? '')
       ? src.collision_policy!
       : defaults.collision_policy,
@@ -33,12 +33,12 @@ export function normalizeOptions(value: Partial<Options> | null | undefined): Op
       Array.isArray(src.jpeg_background) && src.jpeg_background.length === 3
         ? (src.jpeg_background.map((n) => integer(n, 0, 255, 255)) as [number, number, number])
         : defaults.jpeg_background,
-    gif_alpha_threshold: integer(src.gif_alpha_threshold, 1, 255, defaults.gif_alpha_threshold ?? 128),
-    avif_speed: integer(src.avif_speed, 1, 10, defaults.avif_speed ?? 6),
+    gif_alpha_threshold: bounded('gif_alpha_threshold', src.gif_alpha_threshold, defaults.gif_alpha_threshold!),
+    avif_speed: bounded('avif_speed', src.avif_speed, defaults.avif_speed!),
     video_codec: src.video_codec === 'h265' ? 'h265' : 'h264',
     video_preset: src.video_preset === 'fast' || src.video_preset === 'slow' ? src.video_preset : 'medium',
-    video_crf: integer(src.video_crf, 18, 35, defaults.video_crf ?? 23),
-    video_audio_kbps: integer(src.video_audio_kbps, 64, 320, defaults.video_audio_kbps ?? 128),
+    video_crf: bounded('video_crf', src.video_crf, defaults.video_crf!),
+    video_audio_kbps: bounded('video_audio_kbps', src.video_audio_kbps, defaults.video_audio_kbps!),
   };
 }
 

@@ -28,6 +28,49 @@ fn make(binary: &Path, args: &[&str], output: &Path) {
 }
 
 #[test]
+fn video_gif_conversion_applies_dimensions_and_the_alpha_threshold() {
+    let Some(binary) = find_ffmpeg() else {
+        return;
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let frame = dir.path().join("alpha.png");
+    image::RgbaImage::from_pixel(40, 20, image::Rgba([255, 0, 0, 128]))
+        .save(&frame)
+        .unwrap();
+    let input = dir.path().join("alpha.mov");
+    make(
+        &binary,
+        &[
+            "-loop",
+            "1",
+            "-i",
+            frame.to_str().unwrap(),
+            "-t",
+            "0.2",
+            "-c:v",
+            "png",
+            "-pix_fmt",
+            "rgba",
+        ],
+        &input,
+    );
+    for (threshold, expected_alpha) in [(1, 255), (200, 0)] {
+        let options = Options {
+            max_width: Some(20),
+            max_height: Some(20),
+            gif_alpha_threshold: threshold,
+            ..Default::default()
+        };
+        let output = Registry::default()
+            .convert(&input, Format::Gif, &options, &|_| {}, &CancelToken::new())
+            .unwrap();
+        let image = image::open(output).unwrap().into_rgba8();
+        assert_eq!(image.dimensions(), (20, 10));
+        assert_eq!(image.get_pixel(10, 5)[3], expected_alpha);
+    }
+}
+
+#[test]
 fn audio_cover_art_and_surround_high_sample_rates_convert() {
     let Some(binary) = find_ffmpeg() else {
         eprintln!("FFmpeg absent: skipping media integration test");

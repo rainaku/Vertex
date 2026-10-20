@@ -6,6 +6,7 @@
   export let max: number = 100;
   export let step: number = 1;
   export let unit: string = '%';
+  export let ariaLabel: string | undefined = undefined;
   export let ticks: number = 15;
   export let onChange: ((val: number) => void) | undefined = undefined;
 
@@ -90,6 +91,7 @@
   class:released={justReleased}
   bind:this={containerEl}
   role="slider"
+  aria-label={ariaLabel}
   tabindex="0"
   aria-valuenow={value}
   aria-valuemin={min}

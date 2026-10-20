@@ -82,9 +82,90 @@ pub enum Format {
     TarGz,
     #[serde(rename = "7Z", alias = "SEVENZ", alias = "7z")]
     SevenZ,
+    Gz,
 }
 
 impl Format {
+    pub const ALL: &'static [Self] = &[
+        Self::Png,
+        Self::Jpg,
+        Self::Webp,
+        Self::Avif,
+        Self::Heic,
+        Self::Tiff,
+        Self::Bmp,
+        Self::Gif,
+        Self::Ico,
+        Self::Svg,
+        Self::Pdf,
+        Self::Docx,
+        Self::Odt,
+        Self::Rtf,
+        Self::Txt,
+        Self::Md,
+        Self::Html,
+        Self::Xlsx,
+        Self::Xls,
+        Self::Ods,
+        Self::Csv,
+        Self::Tsv,
+        Self::Json,
+        Self::Yaml,
+        Self::Toml,
+        Self::Xml,
+        Self::Pptx,
+        Self::Ppt,
+        Self::Odp,
+        Self::Mp3,
+        Self::Wav,
+        Self::Flac,
+        Self::Aac,
+        Self::Ogg,
+        Self::M4a,
+        Self::Opus,
+        Self::Aiff,
+        Self::Wma,
+        Self::Mp4,
+        Self::Mov,
+        Self::Mkv,
+        Self::Avi,
+        Self::Webm,
+        Self::Wmv,
+        Self::Flv,
+        Self::ThreeGp,
+        Self::Ts,
+        Self::Zip,
+        Self::TarGz,
+        Self::SevenZ,
+        Self::Gz,
+    ];
+
+    fn aliases(&self) -> &'static [&'static str] {
+        match self {
+            Self::Jpg => &["jpeg", "jpe", "jfif"],
+            Self::Heic => &["heif"],
+            Self::Tiff => &["tif"],
+            Self::Bmp => &["dib"],
+            Self::Txt => &["text", "log"],
+            Self::Md => &["markdown"],
+            Self::Html => &["htm"],
+            Self::Yaml => &["yml"],
+            Self::Ogg => &["oga"],
+            Self::Aiff => &["aif"],
+            Self::Mp4 => &["m4v"],
+            Self::ThreeGp => &["3gpp", "3g2"],
+            Self::Ts => &["m2ts"],
+            Self::TarGz => &["tgz"],
+            _ => &[],
+        }
+    }
+
+    /// Canonical suffix plus every supported alias, shared with file pickers.
+    pub fn extensions(&self) -> Vec<&'static str> {
+        std::iter::once(self.extension())
+            .chain(self.aliases().iter().copied())
+            .collect()
+    }
     pub fn label(&self) -> &'static str {
         match self {
             Format::Png => "PNG",
@@ -137,6 +218,7 @@ impl Format {
             Format::Zip => "ZIP",
             Format::TarGz => "TAR.GZ",
             Format::SevenZ => "7Z",
+            Format::Gz => "GZ",
         }
     }
 
@@ -192,6 +274,7 @@ impl Format {
             Format::Zip => "zip",
             Format::TarGz => "tar.gz",
             Format::SevenZ => "7z",
+            Format::Gz => "gz",
         }
     }
 
@@ -248,7 +331,7 @@ impl Format {
             | Format::ThreeGp
             | Format::Ts => Category::Video,
 
-            Format::Zip | Format::TarGz | Format::SevenZ => Category::Archive,
+            Format::Zip | Format::TarGz | Format::SevenZ | Format::Gz => Category::Archive,
         }
     }
 
@@ -274,59 +357,10 @@ impl Format {
             *dst = src.to_ascii_lowercase();
         }
         let cleaned = std::str::from_utf8(&buf[..trimmed.len()]).ok()?;
-        match cleaned {
-            "png" => Some(Format::Png),
-            "jpg" | "jpeg" | "jpe" | "jfif" => Some(Format::Jpg),
-            "webp" => Some(Format::Webp),
-            "avif" => Some(Format::Avif),
-            "heic" | "heif" => Some(Format::Heic),
-            "tiff" | "tif" => Some(Format::Tiff),
-            "bmp" | "dib" => Some(Format::Bmp),
-            "gif" => Some(Format::Gif),
-            "ico" => Some(Format::Ico),
-            "svg" => Some(Format::Svg),
-            "pdf" => Some(Format::Pdf),
-            "docx" => Some(Format::Docx),
-            "odt" => Some(Format::Odt),
-            "rtf" => Some(Format::Rtf),
-            "txt" | "text" | "log" => Some(Format::Txt),
-            "md" | "markdown" => Some(Format::Md),
-            "html" | "htm" => Some(Format::Html),
-            "xlsx" => Some(Format::Xlsx),
-            "xls" => Some(Format::Xls),
-            "ods" => Some(Format::Ods),
-            "csv" => Some(Format::Csv),
-            "tsv" => Some(Format::Tsv),
-            "json" => Some(Format::Json),
-            "yaml" | "yml" => Some(Format::Yaml),
-            "toml" => Some(Format::Toml),
-            "xml" => Some(Format::Xml),
-            "pptx" => Some(Format::Pptx),
-            "ppt" => Some(Format::Ppt),
-            "odp" => Some(Format::Odp),
-            "mp3" => Some(Format::Mp3),
-            "wav" => Some(Format::Wav),
-            "flac" => Some(Format::Flac),
-            "aac" => Some(Format::Aac),
-            "ogg" | "oga" => Some(Format::Ogg),
-            "m4a" => Some(Format::M4a),
-            "opus" => Some(Format::Opus),
-            "aiff" | "aif" => Some(Format::Aiff),
-            "wma" => Some(Format::Wma),
-            "mp4" | "m4v" => Some(Format::Mp4),
-            "mov" => Some(Format::Mov),
-            "mkv" => Some(Format::Mkv),
-            "avi" => Some(Format::Avi),
-            "webm" => Some(Format::Webm),
-            "wmv" => Some(Format::Wmv),
-            "flv" => Some(Format::Flv),
-            "3gp" | "3gpp" | "3g2" => Some(Format::ThreeGp),
-            "ts" | "m2ts" => Some(Format::Ts),
-            "zip" => Some(Format::Zip),
-            "tar.gz" | "tgz" => Some(Format::TarGz),
-            "7z" => Some(Format::SevenZ),
-            _ => None,
-        }
+        Self::ALL
+            .iter()
+            .copied()
+            .find(|format| format.extension() == cleaned || format.aliases().contains(&cleaned))
     }
 
     pub fn from_mime(mime: &str) -> Option<Self> {
@@ -397,6 +431,7 @@ impl Format {
             "video/mp2t" | "video/vnd.dlna.mpeg-tts" => Some(Format::Ts),
             "application/zip" => Some(Format::Zip),
             "application/x-7z-compressed" => Some(Format::SevenZ),
+            "application/gzip" | "application/x-gzip" => Some(Format::Gz),
             _ => None,
         }
     }

@@ -1,4 +1,6 @@
 <script lang="ts">
+  import contract from "./conversion-contract.json";
+  const limits = contract.limits;
   import { onMount, onDestroy } from 'svelte';
   import { t, language, setLanguage } from './i18n';
   import type { Options } from './types';
@@ -300,47 +302,32 @@
     }
   }
 
-  // ── Search matches ──────────────────────────────────────────────────────────
-
+  type SettingId = 'language' | 'profiles' | 'quality' | 'folder' | 'collision' | 'metadata' | 'background' | 'dimensions' | 'codec' | 'crf' | 'avif' | 'gif' | 'dpi' | 'audio' | 'preset';
+  const searchTerms: Record<SettingId, string> = {
+    language: 'ngôn ngữ language tiếng việt english', profiles: 'hồ sơ profile balanced web quality preset',
+    quality: 'chất lượng quality jpg avif nén', folder: 'thư mục folder output đầu ra đích',
+    collision: 'trùng tên tệp collision ghi đè overwrite', metadata: 'exif siêu dữ liệu metadata gps riêng tư',
+    background: 'màu nền background color', dimensions: 'kích thước rộng cao width height dimension video',
+    codec: 'video codec h264 h265 mã hóa', crf: 'crf nét dung lượng video',
+    avif: 'avif tốc độ speed', gif: 'gif alpha trong suốt threshold', dpi: 'dpi pdf svg tài liệu phân giải',
+    audio: 'âm thanh audio bitrate kbps video', preset: 'preset cpu fast medium slow tốc độ encode video',
+  };
+  const sections: {tab: TabKey; vi: string; en: string; rows: SettingId[]}[] = [
+    {tab: 'general', vi: '', en: '', rows: ['language']},
+    {tab: 'general', vi: 'CẤU HÌNH NHANH', en: 'PRESETS', rows: ['profiles']},
+    {tab: 'general', vi: 'THƯ MỤC & ĐÍCH ĐẾN', en: 'OUTPUT DESTINATION', rows: ['folder', 'collision']},
+    {tab: 'image', vi: 'CHẤT LƯỢNG & NÉN HÌNH ẢNH', en: 'IMAGE QUALITY & COMPRESSION', rows: ['quality', 'metadata', 'background', 'avif', 'gif']},
+    {tab: 'image', vi: 'GIỚI HẠN KÍCH THƯỚC (PX)', en: 'MAX DIMENSIONS (PX)', rows: ['dimensions']},
+    {tab: 'video', vi: 'MÃ HÓA VIDEO & ÂM THANH', en: 'VIDEO & AUDIO ENCODING', rows: ['codec', 'crf', 'preset', 'audio']},
+    {tab: 'advanced', vi: 'TÀI LIỆU & ĐỒ HỌA VECTOR', en: 'PDF & VECTOR GRAPHICS', rows: ['dpi']},
+  ];
   $: isSearching = searchQuery.trim().length > 0;
   $: lowerSearch = searchQuery.toLowerCase().trim();
-
-  function matchText(text: string, query: string): boolean {
-    return text.toLowerCase().includes(query);
-  }
-
-  $: hasMatchAutostart = matchText('khởi động cùng windows', lowerSearch) || matchText('startup', lowerSearch) || matchText('autostart', lowerSearch) || matchText('boot', lowerSearch) || matchText('start with windows', lowerSearch);
-  $: hasMatchLanguage = matchText('ngôn ngữ', lowerSearch) || matchText('language', lowerSearch) || matchText('tiếng việt', lowerSearch) || matchText('english', lowerSearch);
-  $: hasMatchQuality = matchText('chất lượng', lowerSearch) || matchText('quality', lowerSearch) || matchText('jpg', lowerSearch) || matchText('avif', lowerSearch) || matchText('nén', lowerSearch);
-  $: hasMatchFolder = matchText('thư mục', lowerSearch) || matchText('folder', lowerSearch) || matchText('output', lowerSearch) || matchText('đầu ra', lowerSearch) || matchText('đích', lowerSearch);
-  $: hasMatchCollision = matchText('trùng', lowerSearch) || matchText('tên tệp', lowerSearch) || matchText('collision', lowerSearch) || matchText('ghi đè', lowerSearch) || matchText('overwrite', lowerSearch);
-  $: hasMatchMetadata = matchText('exif', lowerSearch) || matchText('siêu dữ liệu', lowerSearch) || matchText('metadata', lowerSearch) || matchText('gps', lowerSearch) || matchText('riêng tư', lowerSearch);
-  $: hasMatchBgColor = matchText('màu nền', lowerSearch) || matchText('nền', lowerSearch) || matchText('background', lowerSearch) || matchText('color', lowerSearch);
-  $: hasMatchDimensions = matchText('kích thước', lowerSearch) || matchText('rộng', lowerSearch) || matchText('cao', lowerSearch) || matchText('width', lowerSearch) || matchText('height', lowerSearch) || matchText('dimension', lowerSearch);
-  $: hasMatchVideoCodec = matchText('video', lowerSearch) || matchText('codec', lowerSearch) || matchText('h264', lowerSearch) || matchText('h265', lowerSearch) || matchText('mã hóa', lowerSearch);
-  $: hasMatchVideoCrf = matchText('crf', lowerSearch) || matchText('nét', lowerSearch) || matchText('dung lượng video', lowerSearch);
-  $: hasMatchAvifSpeed = matchText('avif', lowerSearch) || matchText('tốc độ', lowerSearch) || matchText('speed', lowerSearch);
-  $: hasMatchGifAlpha = matchText('gif', lowerSearch) || matchText('alpha', lowerSearch) || matchText('trong suốt', lowerSearch) || matchText('threshold', lowerSearch);
-  $: hasMatchDpi = matchText('dpi', lowerSearch) || matchText('pdf', lowerSearch) || matchText('tài liệu', lowerSearch) || matchText('phân giải', lowerSearch);
-  $: hasMatchVideoPreset = matchText('preset', lowerSearch) || matchText('cpu', lowerSearch) || matchText('fast', lowerSearch) || matchText('slow', lowerSearch);
-  $: hasMatchShortcuts = matchText('phím tắt', lowerSearch) || matchText('shortcut', lowerSearch) || matchText('shift', lowerSearch) || matchText('drag', lowerSearch) || matchText('esc', lowerSearch);
-
-  $: hasAnySearchResult =
-    hasMatchAutostart ||
-    hasMatchLanguage ||
-    hasMatchQuality ||
-    hasMatchFolder ||
-    hasMatchCollision ||
-    hasMatchMetadata ||
-    hasMatchBgColor ||
-    hasMatchDimensions ||
-    hasMatchVideoCodec ||
-    hasMatchVideoCrf ||
-    hasMatchAvifSpeed ||
-    hasMatchGifAlpha ||
-    hasMatchDpi ||
-    hasMatchVideoPreset ||
-    hasMatchShortcuts;
+  $: hasMatchAutostart = 'khởi động cùng windows startup autostart boot start with windows'.includes(lowerSearch);
+  $: hasMatchShortcuts = 'phím tắt shortcut shift drag esc'.includes(lowerSearch);
+  $: visibleSections = sections.filter(section => isSearching || section.tab === activeTab)
+    .map(section => ({...section, rows: section.rows.filter(id => !isSearching || searchTerms[id].includes(lowerSearch))}))
+    .filter(section => section.rows.length > 0);
 </script>
 {#snippet videoPresetControl()}
               <div class="setting-row">
@@ -376,6 +363,204 @@
               </div>
 {/snippet}
 
+
+{#snippet languageControl()}
+<div class="setting-row">
+                <div class="row-info">
+                  <span class="row-title">{$language === 'vi' ? 'Ngôn ngữ giao diện' : 'Display Language'}</span>
+                  <span class="row-desc">{$language === 'vi' ? 'Thay đổi ngôn ngữ hiển thị trên toàn bộ giao diện.' : 'Select language for the user interface.'}</span>
+                </div>
+                <div class="seg">
+                  <button type="button" class="seg-btn" class:seg-on={$language === 'vi'} on:click={() => setLanguage('vi')}>Tiếng Việt</button>
+                  <button type="button" class="seg-btn" class:seg-on={$language === 'en'} on:click={() => setLanguage('en')}>English</button>
+                </div>
+              </div>
+{/snippet}
+{#snippet profilesControl()}
+<div class="setting-row vertical">
+                <div class="row-info">
+                  <span class="row-title">{$language === 'vi' ? 'Hồ sơ chuyển đổi' : 'Optimized profiles'}</span>
+                  <span class="row-desc">{$language === 'vi' ? 'Áp dụng nhanh các thiết lập độ nét và kích thước.' : 'Quickly apply balanced or maximum quality.'}</span>
+                </div>
+                <div class="chips">
+                  <button type="button" class="chip" class:chip-on={activePreset === 'balanced'} on:click={() => preset('balanced')}>
+                    {$language === 'vi' ? 'Cân bằng' : 'Balanced'}
+                  </button>
+                  <button type="button" class="chip" class:chip-on={activePreset === 'web'} on:click={() => preset('web')}>
+                    {$language === 'vi' ? 'Nhẹ cho web' : 'Web compact'}
+                  </button>
+                  <button type="button" class="chip" class:chip-on={activePreset === 'quality'} on:click={() => preset('quality')}>
+                    {$language === 'vi' ? 'Chất lượng cao' : 'High quality'}
+                  </button>
+                </div>
+              </div>
+{/snippet}
+{#snippet qualityControl()}
+<div class="setting-row vertical">
+                <div class="row-info">
+                  <span class="row-title">{$language === 'vi' ? 'Chất lượng JPG / AVIF' : 'JPG / AVIF quality'}</span>
+                  <span class="row-desc">{$language === 'vi' ? 'WEBP luôn lossless. PNG và TIFF bảo toàn nguyên gốc.' : 'WEBP is lossless. PNG and TIFF remain unaffected.'}</span>
+                </div>
+                <ElasticSlider bind:value={draft.quality} min={limits.quality.min} max={limits.quality.max} step={1} unit="%"/>
+              </div>
+{/snippet}
+{#snippet folderControl()}
+<div class="setting-row vertical">
+                <div class="row-info">
+                  <span class="row-title">{$language === 'vi' ? 'Thư mục xuất file' : 'Output folder'}</span>
+                  <span class="row-desc">{draft.output_dir || ($language === 'vi' ? 'Mặc định lưu cùng thư mục với tệp gốc.' : 'Defaults to the same folder as the original file.')}</span>
+                </div>
+                <div class="folder-row">
+                  <div class="folder-path" title={draft.output_dir || ($language === 'vi' ? 'Cùng thư mục với file gốc' : 'Same folder as source')}>
+                    <span class="path-text">{draft.output_dir || ($language === 'vi' ? 'Cùng thư mục với file gốc' : 'Same folder as source')}</span>
+                  </div>
+                  <button type="button" class="btn-subtle" on:click={chooseFolder} disabled={!isTauri || pickingFolder}>
+                    {pickingFolder ? '…' : ($language === 'vi' ? 'Duyệt…' : 'Browse…')}
+                  </button>
+                  {#if draft.output_dir}
+                    <button type="button" class="btn-subtle" on:click={() => draft.output_dir = undefined} disabled={pickingFolder} title={$language === 'vi' ? 'Đặt lại mặc định' : 'Reset to default'} aria-label={$t('Dùng thư mục gốc')}>
+                      <ArrowCounterClockwiseIcon size={16} weight="bold" aria-hidden="true" />
+                    </button>
+                  {/if}
+                </div>
+              </div>
+{/snippet}
+{#snippet collisionControl()}
+<div class="setting-row vertical">
+                <div class="row-info">
+                  <span class="row-title">{$language === 'vi' ? 'Quy tắc trùng tên tệp' : 'Collision policy'}</span>
+                  <span class="row-desc">{$language === 'vi' ? 'Hành động khi tệp đầu ra đã tồn tại trên đĩa.' : 'Behavior when output file already exists.'}</span>
+                </div>
+                <div class="seg seg-full">
+                  <button type="button" class="seg-btn" class:seg-on={draft.collision_policy === 'rename_with_suffix'} on:click={() => draft.collision_policy = 'rename_with_suffix'}>
+                    {$language === 'vi' ? 'Đổi tên (+1)' : 'Rename'}
+                  </button>
+                  <button type="button" class="seg-btn" class:seg-on={draft.collision_policy === 'fail_if_exists'} on:click={() => draft.collision_policy = 'fail_if_exists'}>
+                    {$language === 'vi' ? 'Dừng lại' : 'Stop'}
+                  </button>
+                  <button type="button" class="seg-btn seg-danger" class:seg-on={draft.collision_policy === 'overwrite'} on:click={() => draft.collision_policy = 'overwrite'}>
+                    {$language === 'vi' ? 'Ghi đè' : 'Overwrite'}
+                  </button>
+                </div>
+              </div>
+{/snippet}
+{#snippet metadataControl()}
+<div class="setting-row">
+                <div class="row-info">
+                  <span class="row-title">{$language === 'vi' ? 'Xóa siêu dữ liệu (EXIF / GPS)' : 'Strip metadata (EXIF / GPS)'}</span>
+                  <span class="row-desc">{$language === 'vi' ? 'Bảo vệ vị trí chụp, thông tin thiết bị và quyền riêng tư.' : 'Protect camera info, geolocation and privacy.'}</span>
+                </div>
+                <label class="switch">
+                  <input type="checkbox" bind:checked={draft.strip_metadata}/>
+                  <span class="slider"></span>
+                </label>
+              </div>
+{/snippet}
+{#snippet backgroundControl()}
+<div class="setting-row">
+                <div class="row-info">
+                  <span class="row-title">{$language === 'vi' ? 'Màu nền mặc định cho JPG' : 'JPG background fill color'}</span>
+                  <span class="row-desc">{$language === 'vi' ? 'JPG không hỗ trợ kênh trong suốt (alpha).' : 'JPG does not support transparency channel.'}</span>
+                </div>
+                <label class="swatch-pill">
+                  <span class="swatch-dot" style="background:{backgroundHex};"></span>
+                  <span class="swatch-hex">{backgroundHex.toUpperCase()}</span>
+                  <input type="color" value={backgroundHex} on:input={setBackground} class="color-hidden"/>
+                </label>
+              </div>
+{/snippet}
+{#snippet dimensionsControl()}
+<div class="setting-row vertical">
+                <div class="row-info">
+                  <span class="row-title">{$language === 'vi' ? 'Chiều rộng / Chiều cao tối đa' : 'Maximum width & height'}</span>
+                  <span class="row-desc">{$language === 'vi' ? 'Áp dụng cho ảnh, PDF/SVG và video; giữ tỷ lệ khung hình.' : 'Applies to images, PDF/SVG and video; preserves aspect ratio.'}</span>
+                </div>
+                <div class="twin-inputs">
+                  <div class="input-cell">
+                    <span class="input-tag">W</span>
+                    <input type="number" min={limits.max_width.min} max={limits.max_width.max} step="1" placeholder={$language === 'vi' ? 'Giữ nguyên' : 'Auto'} bind:value={draft.max_width} class="num-input"/>
+                  </div>
+                  <div class="input-cell">
+                    <span class="input-tag">H</span>
+                    <input type="number" min={limits.max_width.min} max={limits.max_width.max} step="1" placeholder={$language === 'vi' ? 'Giữ nguyên' : 'Auto'} bind:value={draft.max_height} class="num-input"/>
+                  </div>
+                </div>
+              </div>
+{/snippet}
+{#snippet codecControl()}
+<div class="setting-row">
+                <div class="row-info">
+                  <span class="row-title">{$language === 'vi' ? 'Bộ mã hóa video' : 'Video codec'}</span>
+                  <span class="row-desc">{draft.video_codec === 'h265'
+                    ? ($language === 'vi' ? 'H.265 (HEVC): Tỷ lệ nén siêu việt, dung lượng nhỏ.' : 'H.265 (HEVC): Superior compression, smaller size.')
+                    : ($language === 'vi' ? 'H.264 (AVC): Tương thích tuyệt đối trên mọi thiết bị.' : 'H.264 (AVC): Universal playback compatibility.')}</span>
+                </div>
+                <div class="seg">
+                  <button type="button" class="seg-btn" class:seg-on={draft.video_codec === 'h264'} on:click={() => draft.video_codec = 'h264'}>H.264</button>
+                  <button type="button" class="seg-btn" class:seg-on={draft.video_codec === 'h265'} on:click={() => draft.video_codec = 'h265'}>H.265</button>
+                </div>
+              </div>
+{/snippet}
+{#snippet crfControl()}
+<div class="setting-row vertical">
+                <div class="row-info">
+                  <span class="row-title">{$language === 'vi' ? 'Chất lượng video (CRF)' : 'Constant Rate Factor (CRF)'}</span>
+                  <span class="row-desc">{$language === 'vi' ? 'CRF thấp hơn = chi tiết nét hơn; CRF cao hơn = tệp nhẹ hơn.' : 'Lower CRF = sharper details; higher CRF = smaller file.'}</span>
+                </div>
+                <ElasticSlider bind:value={draft.video_crf} min={limits.video_crf.min} max={limits.video_crf.max} step={1} unit="CRF"/>
+              </div>
+{/snippet}
+{#snippet avifControl()}
+<div class="setting-row vertical">
+                <div class="row-info">
+                  <span class="row-title">{$language === 'vi' ? 'Tốc độ mã hóa AVIF' : 'AVIF encoding speed'}</span>
+                  <span class="row-desc">{$language === 'vi' ? '1: Nén tốt nhất (chậm) · 10: Nhanh nhất.' : '1 = best compression (slow) · 10 = fastest.'}</span>
+                </div>
+                <ElasticSlider bind:value={draft.avif_speed} min={limits.avif_speed.min} max={limits.avif_speed.max} step={1} unit="/ 10"/>
+              </div>
+{/snippet}
+{#snippet gifControl()}
+<div class="setting-row vertical">
+                <div class="row-info">
+                  <span class="row-title">{$language === 'vi' ? 'Ngưỡng trong suốt alpha GIF' : 'GIF alpha threshold'}</span>
+                  <span class="row-desc">{$language === 'vi' ? 'Các pixel có độ mờ dưới ngưỡng sẽ trở thành hoàn toàn trong suốt.' : 'Pixels below this opacity threshold become transparent.'}</span>
+                </div>
+                <ElasticSlider bind:value={draft.gif_alpha_threshold} min={limits.gif_alpha_threshold.min} max={limits.gif_alpha_threshold.max} step={1} unit="/ 255"/>
+              </div>
+{/snippet}
+{#snippet dpiControl()}
+<div class="setting-row vertical">
+                <div class="row-info">
+                  <span class="row-title">{$language === 'vi' ? 'Độ phân giải PDF / SVG (DPI)' : 'PDF / SVG render DPI'}</span>
+                  <span class="row-desc">{$language === 'vi' ? 'Xuất trang đầu PDF hoặc đồ họa SVG thành ảnh. PDF cần Poppler.' : 'Render the first PDF page or SVG to an image. PDF requires Poppler.'}</span>
+                </div>
+                <ElasticSlider bind:value={draft.dpi} min={limits.dpi.min} max={limits.dpi.max} step={1} unit="DPI"/>
+              </div>
+{/snippet}
+{#snippet audioControl()}
+<div class="setting-row vertical"><div class="row-info">
+<span class="row-title">{$language === 'vi' ? 'Âm thanh video (kbps)' : 'Video audio bitrate (kbps)'}</span>
+<span class="row-desc">{$language === 'vi' ? 'Bitrate track âm thanh trong video đầu ra, khi codec hỗ trợ.' : 'Audio track bitrate in output video, where supported by the codec.'}</span>
+</div><ElasticSlider bind:value={draft.video_audio_kbps} min={limits.video_audio_kbps.min} max={limits.video_audio_kbps.max} step={1} unit="kbps" ariaLabel={$language === 'vi' ? 'Âm thanh video (kbps)' : 'Video audio bitrate (kbps)'}/></div>
+{/snippet}
+{#snippet settingControl(id: SettingId)}
+{#if id === 'language'}{@render languageControl()}
+{:else if id === 'profiles'}{@render profilesControl()}
+{:else if id === 'quality'}{@render qualityControl()}
+{:else if id === 'folder'}{@render folderControl()}
+{:else if id === 'collision'}{@render collisionControl()}
+{:else if id === 'metadata'}{@render metadataControl()}
+{:else if id === 'background'}{@render backgroundControl()}
+{:else if id === 'dimensions'}{@render dimensionsControl()}
+{:else if id === 'codec'}{@render codecControl()}
+{:else if id === 'crf'}{@render crfControl()}
+{:else if id === 'avif'}{@render avifControl()}
+{:else if id === 'gif'}{@render gifControl()}
+{:else if id === 'dpi'}{@render dpiControl()}
+{:else if id === 'audio'}{@render audioControl()}
+{:else if id === 'preset'}{@render videoPresetControl()}
+{/if}
+{/snippet}
 
 <div
   class="backdrop"
@@ -499,7 +684,7 @@
         </header>
 
         <!-- Scrollable settings list -->
-        {#key `${activeTab}::${isSearching}`}
+        {#key activeTab}
         <div class="content-scroll" use:gsapPane>
           {#if isSearching}
             <div class="section-title">{$language === 'vi' ? 'KẾT QUẢ TÌM KIẾM' : 'SEARCH RESULTS'}</div>
@@ -529,391 +714,21 @@
               {/if}
             </div>
           {/if}
-          {#if isSearching}
-            <!-- Search results -->
-            {#if hasAnySearchResult}
+          {#if isSearching || !['shortcuts', 'about'].includes(activeTab)}
+            {#each visibleSections as section}
+              {#if !isSearching && section.en}<div class="section-title">{$language === 'vi' ? section.vi : section.en}</div>{/if}
               <div class="card">
-                {#if hasMatchLanguage}
-                  <div class="setting-row">
-                    <div class="row-info">
-                      <span class="row-title">{$language === 'vi' ? 'Ngôn ngữ giao diện' : 'Display language'}</span>
-                      <span class="row-desc">{$language === 'vi' ? 'Tiếng Việt hoặc English.' : 'Switch app language.'}</span>
-                    </div>
-                    <div class="seg">
-                      <button type="button" class="seg-btn" class:seg-on={$language === 'vi'} on:click={() => setLanguage('vi')}>Tiếng Việt</button>
-                      <button type="button" class="seg-btn" class:seg-on={$language === 'en'} on:click={() => setLanguage('en')}>English</button>
-                    </div>
-                  </div>
-                {/if}
-
-                {#if hasMatchQuality}
-                  {#if hasMatchLanguage}<div class="divider"></div>{/if}
-                  <div class="setting-row vertical">
-                    <div class="row-info">
-                      <span class="row-title">{$language === 'vi' ? 'Chất lượng ảnh JPG / AVIF' : 'JPG / AVIF quality'}</span>
-                      <span class="row-desc">{$language === 'vi' ? 'Tối ưu độ nén và kích thước tệp.' : 'Image compression ratio.'}</span>
-                    </div>
-                    <ElasticSlider bind:value={draft.quality} min={1} max={100} step={1} unit="%"/>
-                  </div>
-                {/if}
-
-                {#if hasMatchFolder}
-                  {#if hasMatchLanguage || hasMatchQuality}<div class="divider"></div>{/if}
-                  <div class="setting-row vertical">
-                    <div class="row-info">
-                      <span class="row-title">{$language === 'vi' ? 'Thư mục xuất file' : 'Output folder'}</span>
-                      <span class="row-desc">{draft.output_dir || ($language === 'vi' ? 'Cùng thư mục file gốc' : 'Same as source')}</span>
-                    </div>
-                    <div class="folder-row">
-                      <div class="folder-path">{draft.output_dir || ($language === 'vi' ? 'Cùng thư mục file gốc' : 'Same folder as source')}</div>
-                      <button type="button" class="btn-subtle" on:click={chooseFolder} disabled={!isTauri || pickingFolder}>
-                        {pickingFolder ? $t('Đang chọn…') : $t('Duyệt…')}
-                      </button>
-                      {#if draft.output_dir}
-                        <button type="button" class="btn-subtle" on:click={() => draft.output_dir = undefined} disabled={pickingFolder} title={$language === 'vi' ? 'Đặt lại mặc định' : 'Reset to default'} aria-label={$t('Dùng thư mục gốc')}>
-                          <ArrowCounterClockwiseIcon size={16} weight="bold" aria-hidden="true" />
-                        </button>
-                      {/if}
-                    </div>
-                  </div>
-                {/if}
-
-                {#if hasMatchCollision}
-                  {#if hasMatchLanguage || hasMatchQuality || hasMatchFolder}<div class="divider"></div>{/if}
-                  <div class="setting-row vertical">
-                    <div class="row-info">
-                      <span class="row-title">{$language === 'vi' ? 'Quy tắc trùng tên tệp' : 'Collision policy'}</span>
-                      <span class="row-desc">{$language === 'vi' ? 'Hành động khi tệp đầu ra đã tồn tại.' : 'Action when target file exists.'}</span>
-                    </div>
-                    <div class="seg seg-full">
-                      <button type="button" class="seg-btn" class:seg-on={draft.collision_policy === 'rename_with_suffix'} on:click={() => draft.collision_policy = 'rename_with_suffix'}>{$language === 'vi' ? 'Đổi tên (+1)' : 'Rename'}</button>
-                      <button type="button" class="seg-btn" class:seg-on={draft.collision_policy === 'fail_if_exists'} on:click={() => draft.collision_policy = 'fail_if_exists'}>{$language === 'vi' ? 'Dừng lại' : 'Stop'}</button>
-                      <button type="button" class="seg-btn seg-danger" class:seg-on={draft.collision_policy === 'overwrite'} on:click={() => draft.collision_policy = 'overwrite'}>{$language === 'vi' ? 'Ghi đè' : 'Overwrite'}</button>
-                    </div>
-                  </div>
-                {/if}
-
-                {#if hasMatchMetadata}
-                  {#if hasMatchLanguage || hasMatchQuality || hasMatchFolder || hasMatchCollision}<div class="divider"></div>{/if}
-                  <div class="setting-row">
-                    <div class="row-info">
-                      <span class="row-title">{$language === 'vi' ? 'Xóa siêu dữ liệu (EXIF / GPS)' : 'Strip metadata (EXIF / GPS)'}</span>
-                      <span class="row-desc">{$language === 'vi' ? 'Bảo vệ quyền riêng tư cá nhân.' : 'Privacy protection.'}</span>
-                    </div>
-                    <label class="switch">
-                      <input type="checkbox" bind:checked={draft.strip_metadata}/>
-                      <span class="slider"></span>
-                    </label>
-                  </div>
-                {/if}
-
-                {#if hasMatchBgColor}
-                  {#if hasMatchLanguage || hasMatchQuality || hasMatchFolder || hasMatchCollision || hasMatchMetadata}<div class="divider"></div>{/if}
-                  <div class="setting-row">
-                    <div class="row-info">
-                      <span class="row-title">{$language === 'vi' ? 'Màu nền mặc định cho JPG' : 'JPG background color'}</span>
-                      <span class="row-desc">{$language === 'vi' ? 'Thay thế cho nền trong suốt.' : 'Fills transparent backgrounds.'}</span>
-                    </div>
-                    <label class="swatch-pill">
-                      <span class="swatch-dot" style="background:{backgroundHex};"></span>
-                      <span class="swatch-hex">{backgroundHex.toUpperCase()}</span>
-                      <input type="color" value={backgroundHex} on:input={setBackground} class="color-hidden"/>
-                    </label>
-                  </div>
-                {/if}
-
-                {#if hasMatchDimensions}
-                  {#if hasMatchLanguage || hasMatchQuality || hasMatchFolder || hasMatchCollision || hasMatchMetadata || hasMatchBgColor}<div class="divider"></div>{/if}
-                  <div class="setting-row vertical">
-                    <div class="row-info">
-                      <span class="row-title">{$language === 'vi' ? 'Giới hạn kích thước ảnh (W/H)' : 'Max dimensions (W/H)'}</span>
-                      <span class="row-desc">{$language === 'vi' ? 'Thu nhỏ ảnh nếu vượt quá giới hạn.' : 'Scale down only if larger.'}</span>
-                    </div>
-                    <div class="twin-inputs">
-                      <div class="input-cell"><span class="input-tag">W</span><input type="number" min="1" max="32768" step="1" placeholder="Auto" bind:value={draft.max_width} class="num-input"/></div>
-                      <div class="input-cell"><span class="input-tag">H</span><input type="number" min="1" max="32768" step="1" placeholder="Auto" bind:value={draft.max_height} class="num-input"/></div>
-                    </div>
-                  </div>
-                {/if}
-
-                {#if hasMatchVideoCodec}
-                  <div class="divider"></div>
-                  <div class="setting-row">
-                    <div class="row-info">
-                      <span class="row-title">{$language === 'vi' ? 'Bộ mã hóa video' : 'Video codec'}</span>
-                      <span class="row-desc">{draft.video_codec === 'h265' ? 'H.265 (HEVC)' : 'H.264 (AVC)'}</span>
-                    </div>
-                    <div class="seg">
-                      <button type="button" class="seg-btn" class:seg-on={draft.video_codec === 'h264'} on:click={() => draft.video_codec = 'h264'}>H.264</button>
-                      <button type="button" class="seg-btn" class:seg-on={draft.video_codec === 'h265'} on:click={() => draft.video_codec = 'h265'}>H.265</button>
-                    </div>
-                  </div>
-                {/if}
-
-                {#if hasMatchVideoCrf}
-                  <div class="divider"></div>
-                  <div class="setting-row vertical">
-                    <div class="row-info">
-                      <span class="row-title">{$language === 'vi' ? 'Chất lượng video (CRF)' : 'Constant Rate Factor (CRF)'}</span>
-                      <span class="row-desc">{$language === 'vi' ? 'CRF thấp hơn = chi tiết nét hơn.' : 'Lower CRF = sharper details.'}</span>
-                    </div>
-                    <ElasticSlider bind:value={draft.video_crf} min={18} max={35} step={1} unit="CRF"/>
-                  </div>
-                {/if}
-
-                {#if hasMatchAvifSpeed}
-                  <div class="divider"></div>
-                  <div class="setting-row vertical">
-                    <div class="row-info">
-                      <span class="row-title">{$language === 'vi' ? 'Tốc độ mã hóa AVIF' : 'AVIF encoding speed'}</span>
-                      <span class="row-desc">{$language === 'vi' ? '1: Tốt nhất (chậm) · 10: Nhanh nhất.' : '1 = best · 10 = fastest.'}</span>
-                    </div>
-                    <ElasticSlider bind:value={draft.avif_speed} min={1} max={10} step={1} unit="/ 10"/>
-                  </div>
-                {/if}
-
-                {#if hasMatchGifAlpha}
-                  <div class="divider"></div>
-                  <div class="setting-row vertical">
-                    <div class="row-info">
-                      <span class="row-title">{$language === 'vi' ? 'Ngưỡng trong suốt alpha GIF' : 'GIF alpha threshold'}</span>
-                      <span class="row-desc">{$language === 'vi' ? 'Ngưỡng loại bỏ độ mờ.' : 'Alpha opacity cutoff.'}</span>
-                    </div>
-                    <ElasticSlider bind:value={draft.gif_alpha_threshold} min={1} max={255} step={1} unit="/ 255"/>
-                  </div>
-                {/if}
-
-                {#if hasMatchVideoPreset}{@render videoPresetControl()}{/if}
-                {#if hasMatchShortcuts}{@render shortcutControls()}{/if}
-                {#if hasMatchDpi}
-                  <div class="divider"></div>
-                  <div class="setting-row vertical">
-                    <div class="row-info">
-                      <span class="row-title">{$language === 'vi' ? 'Độ phân giải xuất PDF (DPI)' : 'PDF render DPI'}</span>
-                      <span class="row-desc">{$language === 'vi' ? 'Mật độ điểm ảnh khi trích xuất trang PDF.' : 'Pixel density for PDF rasterization.'}</span>
-                    </div>
-                    <ElasticSlider bind:value={draft.dpi} min={72} max={600} step={10} unit="DPI"/>
-                  </div>
-                {/if}
+                {#each section.rows as id}<div class="control-group">{@render settingControl(id)}</div>{/each}
               </div>
-            {:else if !hasMatchAutostart}
-              <div class="card empty-search-card">
-                <span class="empty-title">{$language === 'vi' ? 'Không tìm thấy kết quả' : 'No settings found'}</span>
-                <span class="empty-sub">{$language === 'vi' ? `Không có tùy chọn nào khớp với "${searchQuery}"` : `No options matching "${searchQuery}"`}</span>
-              </div>
+            {/each}
+            {#if isSearching && hasMatchShortcuts}<div class="card">{@render shortcutControls()}</div>{/if}
+            {#if isSearching && visibleSections.length === 0 && !hasMatchAutostart && !hasMatchShortcuts}
+              <div class="card empty-search-card"><span class="empty-title">{$language === 'vi' ? 'Không tìm thấy kết quả' : 'No settings found'}</span>
+              <span class="empty-sub">{$language === 'vi' ? 'Không có tùy chọn nào khớp.' : 'No options match your search.'}</span></div>
             {/if}
-
-          {:else if activeTab === 'general'}
-            <!-- ── TAB: GENERAL ─────────────────────────────────────────────── -->
-            <div class="card">
-              <div class="setting-row">
-                <div class="row-info">
-                  <span class="row-title">{$language === 'vi' ? 'Ngôn ngữ giao diện' : 'Display Language'}</span>
-                  <span class="row-desc">{$language === 'vi' ? 'Thay đổi ngôn ngữ hiển thị trên toàn bộ giao diện.' : 'Select language for the user interface.'}</span>
-                </div>
-                <div class="seg">
-                  <button type="button" class="seg-btn" class:seg-on={$language === 'vi'} on:click={() => setLanguage('vi')}>Tiếng Việt</button>
-                  <button type="button" class="seg-btn" class:seg-on={$language === 'en'} on:click={() => setLanguage('en')}>English</button>
-                </div>
-              </div>
-            </div>
-
-            <div class="section-title">{$language === 'vi' ? 'CẤU HÌNH NHANH' : 'PRESETS'}</div>
-            <div class="card">
-              <div class="setting-row vertical">
-                <div class="row-info">
-                  <span class="row-title">{$language === 'vi' ? 'Hồ sơ chuyển đổi' : 'Optimized profiles'}</span>
-                  <span class="row-desc">{$language === 'vi' ? 'Áp dụng nhanh các thiết lập độ nét và kích thước.' : 'Quickly apply balanced or maximum quality.'}</span>
-                </div>
-                <div class="chips">
-                  <button type="button" class="chip" class:chip-on={activePreset === 'balanced'} on:click={() => preset('balanced')}>
-                    {$language === 'vi' ? 'Cân bằng' : 'Balanced'}
-                  </button>
-                  <button type="button" class="chip" class:chip-on={activePreset === 'web'} on:click={() => preset('web')}>
-                    {$language === 'vi' ? 'Nhẹ cho web' : 'Web compact'}
-                  </button>
-                  <button type="button" class="chip" class:chip-on={activePreset === 'quality'} on:click={() => preset('quality')}>
-                    {$language === 'vi' ? 'Chất lượng cao' : 'High quality'}
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <div class="section-title">{$language === 'vi' ? 'THƯ MỤC & ĐÍCH ĐẾN' : 'OUTPUT DESTINATION'}</div>
-            <div class="card">
-              <div class="setting-row vertical">
-                <div class="row-info">
-                  <span class="row-title">{$language === 'vi' ? 'Thư mục xuất file' : 'Output folder'}</span>
-                  <span class="row-desc">{$language === 'vi' ? 'Mặc định lưu cùng thư mục với tệp gốc.' : 'Defaults to the same folder as the original file.'}</span>
-                </div>
-                <div class="folder-row">
-                  <div class="folder-path" title={draft.output_dir || ($language === 'vi' ? 'Cùng thư mục với file gốc' : 'Same folder as source')}>
-                    <span class="path-text">{draft.output_dir || ($language === 'vi' ? 'Cùng thư mục với file gốc' : 'Same folder as source')}</span>
-                  </div>
-                  <button type="button" class="btn-subtle" on:click={chooseFolder} disabled={!isTauri || pickingFolder}>
-                    {pickingFolder ? '…' : ($language === 'vi' ? 'Duyệt…' : 'Browse…')}
-                  </button>
-                  {#if draft.output_dir}
-                    <button type="button" class="btn-subtle" on:click={() => draft.output_dir = undefined} disabled={pickingFolder} title={$language === 'vi' ? 'Đặt lại mặc định' : 'Reset to default'} aria-label={$t('Dùng thư mục gốc')}>
-                      <ArrowCounterClockwiseIcon size={16} weight="bold" aria-hidden="true" />
-                    </button>
-                  {/if}
-                </div>
-              </div>
-
-              <div class="divider"></div>
-
-              <div class="setting-row vertical">
-                <div class="row-info">
-                  <span class="row-title">{$language === 'vi' ? 'Quy tắc trùng tên tệp' : 'Collision policy'}</span>
-                  <span class="row-desc">{$language === 'vi' ? 'Hành động khi tệp đầu ra đã tồn tại trên đĩa.' : 'Behavior when output file already exists.'}</span>
-                </div>
-                <div class="seg seg-full">
-                  <button type="button" class="seg-btn" class:seg-on={draft.collision_policy === 'rename_with_suffix'} on:click={() => draft.collision_policy = 'rename_with_suffix'}>
-                    {$language === 'vi' ? 'Đổi tên (+1)' : 'Rename'}
-                  </button>
-                  <button type="button" class="seg-btn" class:seg-on={draft.collision_policy === 'fail_if_exists'} on:click={() => draft.collision_policy = 'fail_if_exists'}>
-                    {$language === 'vi' ? 'Dừng lại' : 'Stop'}
-                  </button>
-                  <button type="button" class="seg-btn seg-danger" class:seg-on={draft.collision_policy === 'overwrite'} on:click={() => draft.collision_policy = 'overwrite'}>
-                    {$language === 'vi' ? 'Ghi đè' : 'Overwrite'}
-                  </button>
-                </div>
-              </div>
-            </div>
-
-          {:else if activeTab === 'image'}
-            <!-- ── TAB: IMAGE QUALITY ───────────────────────────────────────── -->
-            <div class="section-title">{$language === 'vi' ? 'CHẤT LƯỢNG & NÉN HÌNH ẢNH' : 'IMAGE QUALITY & COMPRESSION'}</div>
-            <div class="card">
-              <div class="setting-row vertical">
-                <div class="row-info">
-                  <span class="row-title">{$language === 'vi' ? 'Chất lượng JPG / AVIF' : 'JPG / AVIF quality'}</span>
-                  <span class="row-desc">{$language === 'vi' ? 'WEBP luôn lossless. PNG và TIFF bảo toàn nguyên gốc.' : 'WEBP is lossless. PNG and TIFF remain unaffected.'}</span>
-                </div>
-                <ElasticSlider bind:value={draft.quality} min={1} max={100} step={1} unit="%"/>
-              </div>
-
-              <div class="divider"></div>
-
-              <div class="setting-row">
-                <div class="row-info">
-                  <span class="row-title">{$language === 'vi' ? 'Xóa siêu dữ liệu (EXIF / GPS)' : 'Strip metadata (EXIF / GPS)'}</span>
-                  <span class="row-desc">{$language === 'vi' ? 'Bảo vệ vị trí chụp, thông tin thiết bị và quyền riêng tư.' : 'Protect camera info, geolocation and privacy.'}</span>
-                </div>
-                <label class="switch">
-                  <input type="checkbox" bind:checked={draft.strip_metadata}/>
-                  <span class="slider"></span>
-                </label>
-              </div>
-
-              <div class="divider"></div>
-
-              <div class="setting-row">
-                <div class="row-info">
-                  <span class="row-title">{$language === 'vi' ? 'Màu nền mặc định cho JPG' : 'JPG background fill color'}</span>
-                  <span class="row-desc">{$language === 'vi' ? 'JPG không hỗ trợ kênh trong suốt (alpha).' : 'JPG does not support transparency channel.'}</span>
-                </div>
-                <label class="swatch-pill">
-                  <span class="swatch-dot" style="background:{backgroundHex};"></span>
-                  <span class="swatch-hex">{backgroundHex.toUpperCase()}</span>
-                  <input type="color" value={backgroundHex} on:input={setBackground} class="color-hidden"/>
-                </label>
-              </div>
-            </div>
-
-            <div class="section-title">{$language === 'vi' ? 'GIỚI HẠN KÍCH THƯỚC (PX)' : 'MAX DIMENSIONS (PX)'}</div>
-            <div class="card">
-              <div class="setting-row vertical">
-                <div class="row-info">
-                  <span class="row-title">{$language === 'vi' ? 'Chiều rộng / Chiều cao tối đa' : 'Maximum width & height'}</span>
-                  <span class="row-desc">{$language === 'vi' ? 'Ảnh chỉ thu nhỏ nếu vượt quá, luôn giữ đúng tỷ lệ khung hình.' : 'Scales down only if larger. Aspect-ratio is always preserved.'}</span>
-                </div>
-                <div class="twin-inputs">
-                  <div class="input-cell">
-                    <span class="input-tag">W</span>
-                    <input type="number" min="1" max="32768" step="1" placeholder={$language === 'vi' ? 'Giữ nguyên' : 'Auto'} bind:value={draft.max_width} class="num-input"/>
-                  </div>
-                  <div class="input-cell">
-                    <span class="input-tag">H</span>
-                    <input type="number" min="1" max="32768" step="1" placeholder={$language === 'vi' ? 'Giữ nguyên' : 'Auto'} bind:value={draft.max_height} class="num-input"/>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-          {:else if activeTab === 'video'}
-            <!-- ── TAB: VIDEO & AUDIO ───────────────────────────────────────── -->
-            <div class="section-title">{$language === 'vi' ? 'MÃ HÓA VIDEO & CRF' : 'VIDEO CODEC & ENCODING'}</div>
-            <div class="card">
-              <div class="setting-row">
-                <div class="row-info">
-                  <span class="row-title">{$language === 'vi' ? 'Bộ mã hóa video' : 'Video codec'}</span>
-                  <span class="row-desc">{draft.video_codec === 'h265'
-                    ? ($language === 'vi' ? 'H.265 (HEVC): Tỷ lệ nén siêu việt, dung lượng nhỏ.' : 'H.265 (HEVC): Superior compression, smaller size.')
-                    : ($language === 'vi' ? 'H.264 (AVC): Tương thích tuyệt đối trên mọi thiết bị.' : 'H.264 (AVC): Universal playback compatibility.')}</span>
-                </div>
-                <div class="seg">
-                  <button type="button" class="seg-btn" class:seg-on={draft.video_codec === 'h264'} on:click={() => draft.video_codec = 'h264'}>H.264</button>
-                  <button type="button" class="seg-btn" class:seg-on={draft.video_codec === 'h265'} on:click={() => draft.video_codec = 'h265'}>H.265</button>
-                </div>
-              </div>
-
-              <div class="divider"></div>
-
-              <div class="setting-row vertical">
-                <div class="row-info">
-                  <span class="row-title">{$language === 'vi' ? 'Chất lượng video (CRF)' : 'Constant Rate Factor (CRF)'}</span>
-                  <span class="row-desc">{$language === 'vi' ? 'CRF thấp hơn = chi tiết nét hơn; CRF cao hơn = tệp nhẹ hơn.' : 'Lower CRF = sharper details; higher CRF = smaller file.'}</span>
-                </div>
-                <ElasticSlider bind:value={draft.video_crf} min={18} max={35} step={1} unit="CRF"/>
-              </div>
-
-              <div class="divider"></div>
-
-              <div class="setting-row vertical">
-                <div class="row-info">
-                  <span class="row-title">{$language === 'vi' ? 'Tốc độ mã hóa AVIF' : 'AVIF encoding speed'}</span>
-                  <span class="row-desc">{$language === 'vi' ? '1: Nén tốt nhất (chậm) · 10: Nhanh nhất.' : '1 = best compression (slow) · 10 = fastest.'}</span>
-                </div>
-                <ElasticSlider bind:value={draft.avif_speed} min={1} max={10} step={1} unit="/ 10"/>
-              </div>
-            </div>
-
-            <div class="section-title">{$language === 'vi' ? 'ẢNH ĐỘNG GIF' : 'ANIMATED GIF'}</div>
-            <div class="card">
-              <div class="setting-row vertical">
-                <div class="row-info">
-                  <span class="row-title">{$language === 'vi' ? 'Ngưỡng trong suốt alpha GIF' : 'GIF alpha threshold'}</span>
-                  <span class="row-desc">{$language === 'vi' ? 'Các pixel có độ mờ dưới ngưỡng sẽ trở thành hoàn toàn trong suốt.' : 'Pixels below this opacity threshold become transparent.'}</span>
-                </div>
-                <ElasticSlider bind:value={draft.gif_alpha_threshold} min={1} max={255} step={1} unit="/ 255"/>
-              </div>
-            </div>
-
-          {:else if activeTab === 'advanced'}
-            <!-- ── TAB: ADVANCED / PDF ──────────────────────────────────────── -->
-            <div class="section-title">{$language === 'vi' ? 'TÀI LIỆU & PDF' : 'PDF & DOCUMENTS'}</div>
-            <div class="card">
-              <div class="setting-row vertical">
-                <div class="row-info">
-                  <span class="row-title">{$language === 'vi' ? 'Độ phân giải xuất PDF (DPI)' : 'PDF render DPI'}</span>
-                  <span class="row-desc">{$language === 'vi' ? 'Mật độ điểm ảnh khi trích xuất trang PDF thành ảnh (JPG, PNG, WebP).' : 'Pixel density when rendering PDF pages to images.'}</span>
-                </div>
-                <ElasticSlider bind:value={draft.dpi} min={72} max={600} step={10} unit="DPI"/>
-              </div>
-            </div>
-
-            <div class="section-title">{$language === 'vi' ? 'TÙY CHỌN NÂNG CAO' : 'ADVANCED PRESETS'}</div>
-            <div class="card">
-{@render videoPresetControl()}
-            </div>
-
           {:else if activeTab === 'shortcuts'}
-            <!-- ── TAB: SHORTCUTS & GESTURES ────────────────────────────────── -->
             <div class="section-title">{$language === 'vi' ? 'THAO TÁC CỬ CHỈ' : 'GESTURES & SHORTCUTS'}</div>
-            <div class="card">{@render shortcutControls()}            </div>
-
+            <div class="card">{@render shortcutControls()}</div>
           {:else if activeTab === 'about'}
             <!-- ── TAB: ABOUT ───────────────────────────────────────────────── -->
             <div class="card">
@@ -1085,6 +900,11 @@
 </div>
 
 <style>
+  .control-group + .control-group {
+    border-top: 1px solid rgba(255, 255, 255, 0.04);
+    margin-top: 10px;
+    padding-top: 10px;
+  }
   /* ── Interactive Element & Focus Reset ──────────────────────────────────────── */
   button, input, .nav-item {
     outline: none !important;

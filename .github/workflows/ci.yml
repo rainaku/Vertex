@@ -44,6 +44,13 @@ jobs:
         working-directory: frontend
         run: npm run build
 
+      - name: Test Frontend Conversion Contract and UI
+        working-directory: frontend
+        run: npm test
+
+      - name: Test Rust Converters and Conversion Contract
+        run: cargo test --workspace --locked
+
       - name: Run Clippy Linter
         run: cargo clippy --workspace --all-targets -- -D warnings
 

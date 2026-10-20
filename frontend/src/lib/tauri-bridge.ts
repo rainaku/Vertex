@@ -1,3 +1,5 @@
+import contract from './conversion-contract.json';
+import { normalizeOptions } from './settings';
 import { invoke } from '@tauri-apps/api/core';
 import { translate } from './i18n';
 import type {
@@ -12,54 +14,39 @@ import type {
 // Check if running inside Tauri runtime
 export const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 
+export async function getInputFormats() {
+  if (!isTauri) return contract.formats;
+  return invoke<typeof contract.formats>('get_input_formats');
+}
+
+export function mockOutputPath(path: string, target: string): string {
+  const boundary = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\')) + 1;
+  const directory = path.slice(0, boundary);
+  const name = path.slice(boundary);
+  const stem = /\.tar\.gz$/i.test(name) ? name.slice(0, -7) : name.replace(/\.[^.]+$/, '');
+  const extension = contract.formats.find(item => item.format === target)?.extension ?? target.toLowerCase();
+  return directory + stem + '.' + extension;
+}
+
 export async function detectFile(path: string): Promise<FormatInfo> {
   if (!isTauri) {
-    // Browser mock for dev
-    const ext = path.split('.').pop()?.toUpperCase() || 'PNG';
-    let cat = 'image';
-    if (['MP3', 'WAV', 'FLAC', 'AAC', 'OGG', 'M4A', 'OPUS', 'AIFF', 'WMA'].includes(ext)) {
-      cat = 'audio';
-    } else if (['MP4', 'MOV', 'MKV', 'AVI', 'WEBM', 'WMV', 'FLV', '3GP', 'TS'].includes(ext)) {
-      cat = 'video';
-    }
-    return {
-      format: ext,
-      label: ext,
-      extension: ext.toLowerCase(),
-      category: cat,
-      filename: path.split(/[/\\]/).pop() || `test.${ext.toLowerCase()}`,
-    };
+    const filename = path.split(/[/\\]/).pop() || path;
+    const definition = contract.formats.find(item => item.extensions.some(ext => filename.toLowerCase().endsWith('.' + ext)));
+    if (!definition) throw new Error('Unsupported input format: ' + filename);
+    return { ...definition, filename };
   }
   return invoke<FormatInfo>('detect_file', { path });
 }
 
 export async function getAvailableTargets(from: string): Promise<TargetFormatInfo[]> {
   if (!isTauri) {
-    // Browser mock defaults
-    const audio = ['MP3', 'WAV', 'FLAC', 'AAC', 'OGG', 'M4A', 'OPUS', 'AIFF', 'WMA'];
-    const video = ['MP4', 'WEBM', 'MOV', 'MKV', 'AVI', '3GP', 'TS', ...audio, 'GIF'];
-    const image = ['PNG', 'JPG', 'WEBP', 'AVIF', 'BMP', 'ICO', 'TIFF', 'GIF'];
-
-    let pool = image;
-    if (audio.includes(from)) {
-      pool = audio;
-    } else if (['MP4', 'MOV', 'MKV', 'AVI', 'WEBM', 'WMV', 'FLV', '3GP', 'TS'].includes(from)) {
-      pool = video;
-    }
-
-    return pool
-      .map((f) => {
-        let cat = 'image';
-        if (audio.includes(f)) cat = 'audio';
-        else if (['MP4', 'WEBM', 'MOV', 'MKV', 'AVI', 'WMV', 'FLV', '3GP', 'TS'].includes(f)) cat = 'video';
-        return {
-          format: f,
-          label: f,
-          extension: f.toLowerCase(),
-          category: cat,
-          available: true,
-        };
-      });
+    const source = contract.formats.find(item => item.format === from);
+    return (source?.targets ?? []).map(format => {
+      const item = contract.formats.find(item => item.format === format);
+      if (!item) throw new Error('Missing format metadata: ' + format);
+      const notice = (source?.notices as Record<string, { vi: string; en: string }> | undefined)?.[format];
+      return { format, label: item.label, extension: item.extension, category: item.category, available: true, notices: notice ? [notice] : [] };
+    });
   }
   return invoke<TargetFormatInfo[]>('get_available_targets', { from });
 }
@@ -71,7 +58,10 @@ export async function getBatchInfo(paths: string[]): Promise<BatchInfo> {
     return {
       files,
       common_targets: (targets[0] ?? []).filter(target =>
-        targets.every(list => list.some(item => item.format === target.format))),
+        targets.every(list => list.some(item => item.format === target.format))).map(target => ({
+          ...target,
+          notices: [...new Map(targets.flatMap(list => list.find(item => item.format === target.format)?.notices ?? []).map(notice => [notice.en, notice])).values()],
+        })),
     };
   }
   return invoke<BatchInfo>('get_batch_info', { paths });
@@ -90,7 +80,7 @@ export async function convertFile(
         resolve({
           cancelled: false,
           success: true,
-          output_path: inputPath.replace(/\.[^.]+$/, `.${targetFormat.toLowerCase()}`),
+          output_path: mockOutputPath(inputPath, targetFormat),
           target_format: targetFormat,
         });
       }, 1200);
@@ -101,7 +91,7 @@ export async function convertFile(
     jobId,
     inputPath,
     targetFormat,
-    options,
+    options: options ? normalizeOptions(options) : undefined,
   });
 }
 
@@ -154,6 +144,7 @@ export async function pickFile(): Promise<string | null> {
     return new Promise((resolve) => {
       const input = document.createElement('input');
       input.type = 'file';
+      input.accept = contract.formats.flatMap(format => format.extensions.map(ext => '.' + ext)).join(',');
       input.onchange = () => {
         const file = input.files?.[0];
         resolve(file ? file.name : null);
@@ -167,13 +158,7 @@ export async function pickFile(): Promise<string | null> {
     filters: [
       {
         name: translate('Tệp được hỗ trợ'),
-        extensions: [
-          'png', 'jpg', 'jpeg', 'webp', 'avif', 'bmp', 'ico', 'tiff', 'gif',
-          'svg', 'heic', 'tif', 'pdf', 'docx', 'odt', 'rtf', 'txt', 'md', 'html',
-          'csv', 'tsv', 'json', 'xlsx', 'xls', 'ods', 'yaml', 'yml', 'toml', 'xml',
-          'pptx', 'ppt', 'odp', 'mp3', 'wav', 'flac', 'aac', 'ogg', 'm4a', 'opus', 'aiff', 'wma',
-          'mp4', 'mov', 'mkv', 'avi', 'webm', 'wmv', 'flv', '3gp', 'ts', 'zip', 'gz', '7z'
-        ],
+        extensions: (await getInputFormats()).flatMap(format => format.extensions),
       },
     ],
   });

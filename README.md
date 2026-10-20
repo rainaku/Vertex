@@ -67,7 +67,14 @@ To launch Vertex automatically when you sign in to Windows, open **Advanced sett
 | --- | --- | --- |
 | Video | MP4, MOV, MKV, AVI, WEBM, WMV, FLV, 3GP, TS | Includes MP4 to MP4 compression to reduce file size |
 | Audio | MP3, WAV, FLAC, AAC, M4A, OGG, OPUS, AIFF, WMA | Convert audio files or extract audio from video |
-| Image | PNG, JPEG, WEBP, BMP, ICO, TIFF, QOI, AVIF | Fast conversion across popular photo and icon formats |
+| Image | PNG, JPEG, WEBP, BMP, ICO, TIFF, GIF, AVIF, SVG, HEIC/HEIF | SVG rendering is built in; AVIF input uses FFmpeg or ImageMagick, HEIC input requires ImageMagick with libheif |
+| Document | PDF, DOCX, ODT, RTF, TXT, Markdown, HTML | Office conversions use LibreOffice; Markdown/TXT to HTML is built in; PDF to image/text uses Poppler |
+| Spreadsheet | XLSX, XLS, ODS, CSV, TSV | LibreOffice for workbook formats; CSV/TSV conversions are built in |
+| Data | JSON, YAML, TOML, XML, CSV, TSV | Native Rust converters; CSV/TSV require flat table data |
+| Presentation | PPTX, PPT, ODP | LibreOffice for conversion and PDF export |
+| Archive | ZIP, TAR.GZ/TGZ, 7Z; GZ input | Native Rust repacking, preserving file names, contents and empty directories |
+
+The wheel reports missing conversion tools. PDF image export renders the first page at the configured DPI; CSV/TSV workbook export uses the first sheet. HEIC and SVG are input formats. See [conversion behavior and dependencies](docs/conversion-contract.md) for exact routes and constraints.
 
 <div id="installation"></div>
 

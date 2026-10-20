@@ -1,0 +1,1262 @@
+{
+  "default_options": {
+    "quality": 85,
+    "dpi": 200,
+    "max_width": null,
+    "max_height": null,
+    "strip_metadata": true,
+    "output_dir": null,
+    "collision_policy": "rename_with_suffix",
+    "jpeg_background": [
+      255,
+      255,
+      255
+    ],
+    "gif_alpha_threshold": 128,
+    "avif_speed": 6,
+    "video_codec": "h264",
+    "video_preset": "medium",
+    "video_crf": 23,
+    "video_audio_kbps": 128
+  },
+  "limits": {
+    "avif_speed": {
+      "min": 1,
+      "max": 10
+    },
+    "dpi": {
+      "min": 72,
+      "max": 600
+    },
+    "gif_alpha_threshold": {
+      "min": 1,
+      "max": 255
+    },
+    "max_height": {
+      "min": 1,
+      "max": 32768
+    },
+    "max_width": {
+      "min": 1,
+      "max": 32768
+    },
+    "quality": {
+      "min": 1,
+      "max": 100
+    },
+    "video_audio_kbps": {
+      "min": 64,
+      "max": 320
+    },
+    "video_crf": {
+      "min": 18,
+      "max": 35
+    }
+  },
+  "formats": [
+    {
+      "format": "PNG",
+      "label": "PNG",
+      "extension": "png",
+      "extensions": [
+        "png"
+      ],
+      "category": "image",
+      "targets": [
+        "PNG",
+        "JPG",
+        "WEBP",
+        "AVIF",
+        "BMP",
+        "GIF",
+        "ICO",
+        "TIFF"
+      ],
+      "notices": {}
+    },
+    {
+      "format": "JPG",
+      "label": "JPG",
+      "extension": "jpg",
+      "extensions": [
+        "jpg",
+        "jpeg",
+        "jpe",
+        "jfif"
+      ],
+      "category": "image",
+      "targets": [
+        "PNG",
+        "JPG",
+        "WEBP",
+        "AVIF",
+        "BMP",
+        "GIF",
+        "ICO",
+        "TIFF"
+      ],
+      "notices": {}
+    },
+    {
+      "format": "WEBP",
+      "label": "WEBP",
+      "extension": "webp",
+      "extensions": [
+        "webp"
+      ],
+      "category": "image",
+      "targets": [
+        "PNG",
+        "JPG",
+        "WEBP",
+        "AVIF",
+        "BMP",
+        "GIF",
+        "ICO",
+        "TIFF"
+      ],
+      "notices": {}
+    },
+    {
+      "format": "AVIF",
+      "label": "AVIF",
+      "extension": "avif",
+      "extensions": [
+        "avif"
+      ],
+      "category": "image",
+      "targets": [
+        "PNG",
+        "JPG",
+        "WEBP",
+        "AVIF",
+        "BMP",
+        "GIF",
+        "ICO",
+        "TIFF"
+      ],
+      "notices": {}
+    },
+    {
+      "format": "HEIC",
+      "label": "HEIC",
+      "extension": "heic",
+      "extensions": [
+        "heic",
+        "heif"
+      ],
+      "category": "image",
+      "targets": [
+        "PNG",
+        "JPG",
+        "WEBP",
+        "AVIF",
+        "BMP",
+        "GIF",
+        "ICO",
+        "TIFF"
+      ],
+      "notices": {}
+    },
+    {
+      "format": "TIFF",
+      "label": "TIFF",
+      "extension": "tiff",
+      "extensions": [
+        "tiff",
+        "tif"
+      ],
+      "category": "image",
+      "targets": [
+        "PNG",
+        "JPG",
+        "WEBP",
+        "AVIF",
+        "BMP",
+        "GIF",
+        "ICO",
+        "TIFF"
+      ],
+      "notices": {}
+    },
+    {
+      "format": "BMP",
+      "label": "BMP",
+      "extension": "bmp",
+      "extensions": [
+        "bmp",
+        "dib"
+      ],
+      "category": "image",
+      "targets": [
+        "PNG",
+        "JPG",
+        "WEBP",
+        "AVIF",
+        "BMP",
+        "GIF",
+        "ICO",
+        "TIFF"
+      ],
+      "notices": {}
+    },
+    {
+      "format": "GIF",
+      "label": "GIF",
+      "extension": "gif",
+      "extensions": [
+        "gif"
+      ],
+      "category": "image",
+      "targets": [
+        "PNG",
+        "JPG",
+        "WEBP",
+        "AVIF",
+        "BMP",
+        "GIF",
+        "ICO",
+        "TIFF",
+        "MP4",
+        "WEBM"
+      ],
+      "notices": {}
+    },
+    {
+      "format": "ICO",
+      "label": "ICO",
+      "extension": "ico",
+      "extensions": [
+        "ico"
+      ],
+      "category": "image",
+      "targets": [
+        "PNG",
+        "JPG",
+        "WEBP",
+        "AVIF",
+        "BMP",
+        "GIF",
+        "ICO",
+        "TIFF"
+      ],
+      "notices": {}
+    },
+    {
+      "format": "SVG",
+      "label": "SVG",
+      "extension": "svg",
+      "extensions": [
+        "svg"
+      ],
+      "category": "image",
+      "targets": [
+        "PNG",
+        "JPG",
+        "WEBP",
+        "AVIF",
+        "BMP",
+        "GIF",
+        "ICO",
+        "TIFF"
+      ],
+      "notices": {}
+    },
+    {
+      "format": "PDF",
+      "label": "PDF",
+      "extension": "pdf",
+      "extensions": [
+        "pdf"
+      ],
+      "category": "document",
+      "targets": [
+        "TXT",
+        "PNG",
+        "JPG",
+        "WEBP",
+        "AVIF",
+        "BMP",
+        "GIF",
+        "ICO",
+        "TIFF"
+      ],
+      "notices": {
+        "AVIF": {
+          "vi": "Xuất trang đầu của PDF theo DPI đã chọn.",
+          "en": "Renders the first PDF page at the selected DPI."
+        },
+        "BMP": {
+          "vi": "Xuất trang đầu của PDF theo DPI đã chọn.",
+          "en": "Renders the first PDF page at the selected DPI."
+        },
+        "GIF": {
+          "vi": "Xuất trang đầu của PDF theo DPI đã chọn.",
+          "en": "Renders the first PDF page at the selected DPI."
+        },
+        "ICO": {
+          "vi": "Xuất trang đầu của PDF theo DPI đã chọn.",
+          "en": "Renders the first PDF page at the selected DPI."
+        },
+        "JPG": {
+          "vi": "Xuất trang đầu của PDF theo DPI đã chọn.",
+          "en": "Renders the first PDF page at the selected DPI."
+        },
+        "PNG": {
+          "vi": "Xuất trang đầu của PDF theo DPI đã chọn.",
+          "en": "Renders the first PDF page at the selected DPI."
+        },
+        "TIFF": {
+          "vi": "Xuất trang đầu của PDF theo DPI đã chọn.",
+          "en": "Renders the first PDF page at the selected DPI."
+        },
+        "TXT": {
+          "vi": "Trích xuất lớp văn bản của toàn bộ PDF; không nhận dạng OCR.",
+          "en": "Extracts the PDF text layer from all pages; no OCR."
+        },
+        "WEBP": {
+          "vi": "Xuất trang đầu của PDF theo DPI đã chọn.",
+          "en": "Renders the first PDF page at the selected DPI."
+        }
+      }
+    },
+    {
+      "format": "DOCX",
+      "label": "DOCX",
+      "extension": "docx",
+      "extensions": [
+        "docx"
+      ],
+      "category": "document",
+      "targets": [
+        "PDF",
+        "TXT",
+        "HTML",
+        "RTF",
+        "ODT"
+      ],
+      "notices": {}
+    },
+    {
+      "format": "ODT",
+      "label": "ODT",
+      "extension": "odt",
+      "extensions": [
+        "odt"
+      ],
+      "category": "document",
+      "targets": [
+        "PDF",
+        "DOCX",
+        "TXT",
+        "HTML",
+        "RTF"
+      ],
+      "notices": {}
+    },
+    {
+      "format": "RTF",
+      "label": "RTF",
+      "extension": "rtf",
+      "extensions": [
+        "rtf"
+      ],
+      "category": "document",
+      "targets": [
+        "PDF",
+        "DOCX",
+        "TXT",
+        "HTML",
+        "ODT"
+      ],
+      "notices": {}
+    },
+    {
+      "format": "TXT",
+      "label": "TXT",
+      "extension": "txt",
+      "extensions": [
+        "txt",
+        "text",
+        "log"
+      ],
+      "category": "document",
+      "targets": [
+        "PDF",
+        "DOCX",
+        "HTML",
+        "RTF",
+        "ODT"
+      ],
+      "notices": {}
+    },
+    {
+      "format": "MD",
+      "label": "MD",
+      "extension": "md",
+      "extensions": [
+        "md",
+        "markdown"
+      ],
+      "category": "document",
+      "targets": [
+        "PDF",
+        "DOCX",
+        "TXT",
+        "HTML",
+        "RTF",
+        "ODT"
+      ],
+      "notices": {}
+    },
+    {
+      "format": "HTML",
+      "label": "HTML",
+      "extension": "html",
+      "extensions": [
+        "html",
+        "htm"
+      ],
+      "category": "document",
+      "targets": [
+        "PDF",
+        "DOCX",
+        "TXT",
+        "RTF",
+        "ODT"
+      ],
+      "notices": {}
+    },
+    {
+      "format": "XLSX",
+      "label": "XLSX",
+      "extension": "xlsx",
+      "extensions": [
+        "xlsx"
+      ],
+      "category": "spreadsheet",
+      "targets": [
+        "CSV",
+        "TSV",
+        "XLS",
+        "ODS",
+        "PDF"
+      ],
+      "notices": {
+        "CSV": {
+          "vi": "Xuất sheet đầu tiên; công thức được xuất thành giá trị.",
+          "en": "Exports the first sheet; formulas are exported as values."
+        },
+        "TSV": {
+          "vi": "Xuất sheet đầu tiên; công thức được xuất thành giá trị.",
+          "en": "Exports the first sheet; formulas are exported as values."
+        }
+      }
+    },
+    {
+      "format": "XLS",
+      "label": "XLS",
+      "extension": "xls",
+      "extensions": [
+        "xls"
+      ],
+      "category": "spreadsheet",
+      "targets": [
+        "XLSX",
+        "CSV",
+        "TSV",
+        "ODS",
+        "PDF"
+      ],
+      "notices": {
+        "CSV": {
+          "vi": "Xuất sheet đầu tiên; công thức được xuất thành giá trị.",
+          "en": "Exports the first sheet; formulas are exported as values."
+        },
+        "TSV": {
+          "vi": "Xuất sheet đầu tiên; công thức được xuất thành giá trị.",
+          "en": "Exports the first sheet; formulas are exported as values."
+        }
+      }
+    },
+    {
+      "format": "ODS",
+      "label": "ODS",
+      "extension": "ods",
+      "extensions": [
+        "ods"
+      ],
+      "category": "spreadsheet",
+      "targets": [
+        "XLSX",
+        "CSV",
+        "TSV",
+        "XLS",
+        "PDF"
+      ],
+      "notices": {
+        "CSV": {
+          "vi": "Xuất sheet đầu tiên; công thức được xuất thành giá trị.",
+          "en": "Exports the first sheet; formulas are exported as values."
+        },
+        "TSV": {
+          "vi": "Xuất sheet đầu tiên; công thức được xuất thành giá trị.",
+          "en": "Exports the first sheet; formulas are exported as values."
+        }
+      }
+    },
+    {
+      "format": "CSV",
+      "label": "CSV",
+      "extension": "csv",
+      "extensions": [
+        "csv"
+      ],
+      "category": "spreadsheet",
+      "targets": [
+        "XLSX",
+        "CSV",
+        "JSON",
+        "TSV",
+        "XLS",
+        "ODS",
+        "YAML",
+        "TOML",
+        "XML",
+        "PDF"
+      ],
+      "notices": {
+        "XML": {
+          "vi": "XML dùng @ cho thuộc tính, $text cho nội dung và mảng cho phần tử lặp. Giá trị XML là chuỗi.",
+          "en": "XML maps attributes to @keys, text to $text and repeated elements to arrays. XML scalars are strings."
+        }
+      }
+    },
+    {
+      "format": "TSV",
+      "label": "TSV",
+      "extension": "tsv",
+      "extensions": [
+        "tsv"
+      ],
+      "category": "spreadsheet",
+      "targets": [
+        "XLSX",
+        "CSV",
+        "JSON",
+        "TSV",
+        "XLS",
+        "ODS",
+        "YAML",
+        "TOML",
+        "XML",
+        "PDF"
+      ],
+      "notices": {
+        "XML": {
+          "vi": "XML dùng @ cho thuộc tính, $text cho nội dung và mảng cho phần tử lặp. Giá trị XML là chuỗi.",
+          "en": "XML maps attributes to @keys, text to $text and repeated elements to arrays. XML scalars are strings."
+        }
+      }
+    },
+    {
+      "format": "JSON",
+      "label": "JSON",
+      "extension": "json",
+      "extensions": [
+        "json"
+      ],
+      "category": "spreadsheet",
+      "targets": [
+        "CSV",
+        "JSON",
+        "TSV",
+        "YAML",
+        "TOML",
+        "XML"
+      ],
+      "notices": {
+        "CSV": {
+          "vi": "Dữ liệu cần là mảng các đối tượng có ô vô hướng; không tự làm phẳng dữ liệu lồng nhau.",
+          "en": "Requires an array of objects with scalar cells; nested data is not flattened."
+        },
+        "TSV": {
+          "vi": "Dữ liệu cần là mảng các đối tượng có ô vô hướng; không tự làm phẳng dữ liệu lồng nhau.",
+          "en": "Requires an array of objects with scalar cells; nested data is not flattened."
+        },
+        "XML": {
+          "vi": "XML dùng @ cho thuộc tính, $text cho nội dung và mảng cho phần tử lặp. Giá trị XML là chuỗi.",
+          "en": "XML maps attributes to @keys, text to $text and repeated elements to arrays. XML scalars are strings."
+        }
+      }
+    },
+    {
+      "format": "YAML",
+      "label": "YAML",
+      "extension": "yaml",
+      "extensions": [
+        "yaml",
+        "yml"
+      ],
+      "category": "spreadsheet",
+      "targets": [
+        "CSV",
+        "JSON",
+        "TSV",
+        "YAML",
+        "TOML",
+        "XML"
+      ],
+      "notices": {
+        "CSV": {
+          "vi": "Dữ liệu cần là mảng các đối tượng có ô vô hướng; không tự làm phẳng dữ liệu lồng nhau.",
+          "en": "Requires an array of objects with scalar cells; nested data is not flattened."
+        },
+        "TSV": {
+          "vi": "Dữ liệu cần là mảng các đối tượng có ô vô hướng; không tự làm phẳng dữ liệu lồng nhau.",
+          "en": "Requires an array of objects with scalar cells; nested data is not flattened."
+        },
+        "XML": {
+          "vi": "XML dùng @ cho thuộc tính, $text cho nội dung và mảng cho phần tử lặp. Giá trị XML là chuỗi.",
+          "en": "XML maps attributes to @keys, text to $text and repeated elements to arrays. XML scalars are strings."
+        }
+      }
+    },
+    {
+      "format": "TOML",
+      "label": "TOML",
+      "extension": "toml",
+      "extensions": [
+        "toml"
+      ],
+      "category": "spreadsheet",
+      "targets": [
+        "CSV",
+        "JSON",
+        "TSV",
+        "YAML",
+        "TOML",
+        "XML"
+      ],
+      "notices": {
+        "CSV": {
+          "vi": "Dữ liệu cần là mảng các đối tượng có ô vô hướng; không tự làm phẳng dữ liệu lồng nhau.",
+          "en": "Requires an array of objects with scalar cells; nested data is not flattened."
+        },
+        "TSV": {
+          "vi": "Dữ liệu cần là mảng các đối tượng có ô vô hướng; không tự làm phẳng dữ liệu lồng nhau.",
+          "en": "Requires an array of objects with scalar cells; nested data is not flattened."
+        },
+        "XML": {
+          "vi": "XML dùng @ cho thuộc tính, $text cho nội dung và mảng cho phần tử lặp. Giá trị XML là chuỗi.",
+          "en": "XML maps attributes to @keys, text to $text and repeated elements to arrays. XML scalars are strings."
+        }
+      }
+    },
+    {
+      "format": "XML",
+      "label": "XML",
+      "extension": "xml",
+      "extensions": [
+        "xml"
+      ],
+      "category": "spreadsheet",
+      "targets": [
+        "CSV",
+        "JSON",
+        "TSV",
+        "YAML",
+        "TOML",
+        "XML"
+      ],
+      "notices": {
+        "CSV": {
+          "vi": "Dữ liệu cần là mảng các đối tượng có ô vô hướng; không tự làm phẳng dữ liệu lồng nhau.",
+          "en": "Requires an array of objects with scalar cells; nested data is not flattened."
+        },
+        "JSON": {
+          "vi": "XML dùng @ cho thuộc tính, $text cho nội dung và mảng cho phần tử lặp. Giá trị XML là chuỗi.",
+          "en": "XML maps attributes to @keys, text to $text and repeated elements to arrays. XML scalars are strings."
+        },
+        "TOML": {
+          "vi": "XML dùng @ cho thuộc tính, $text cho nội dung và mảng cho phần tử lặp. Giá trị XML là chuỗi.",
+          "en": "XML maps attributes to @keys, text to $text and repeated elements to arrays. XML scalars are strings."
+        },
+        "TSV": {
+          "vi": "Dữ liệu cần là mảng các đối tượng có ô vô hướng; không tự làm phẳng dữ liệu lồng nhau.",
+          "en": "Requires an array of objects with scalar cells; nested data is not flattened."
+        },
+        "XML": {
+          "vi": "XML dùng @ cho thuộc tính, $text cho nội dung và mảng cho phần tử lặp. Giá trị XML là chuỗi.",
+          "en": "XML maps attributes to @keys, text to $text and repeated elements to arrays. XML scalars are strings."
+        },
+        "YAML": {
+          "vi": "XML dùng @ cho thuộc tính, $text cho nội dung và mảng cho phần tử lặp. Giá trị XML là chuỗi.",
+          "en": "XML maps attributes to @keys, text to $text and repeated elements to arrays. XML scalars are strings."
+        }
+      }
+    },
+    {
+      "format": "PPTX",
+      "label": "PPTX",
+      "extension": "pptx",
+      "extensions": [
+        "pptx"
+      ],
+      "category": "presentation",
+      "targets": [
+        "ODP",
+        "PPT",
+        "PDF"
+      ],
+      "notices": {}
+    },
+    {
+      "format": "PPT",
+      "label": "PPT",
+      "extension": "ppt",
+      "extensions": [
+        "ppt"
+      ],
+      "category": "presentation",
+      "targets": [
+        "ODP",
+        "PPTX",
+        "PDF"
+      ],
+      "notices": {}
+    },
+    {
+      "format": "ODP",
+      "label": "ODP",
+      "extension": "odp",
+      "extensions": [
+        "odp"
+      ],
+      "category": "presentation",
+      "targets": [
+        "PPT",
+        "PPTX",
+        "PDF"
+      ],
+      "notices": {}
+    },
+    {
+      "format": "MP3",
+      "label": "MP3",
+      "extension": "mp3",
+      "extensions": [
+        "mp3"
+      ],
+      "category": "audio",
+      "targets": [
+        "MP3",
+        "WAV",
+        "FLAC",
+        "AAC",
+        "M4A",
+        "OGG",
+        "OPUS",
+        "AIFF",
+        "WMA"
+      ],
+      "notices": {}
+    },
+    {
+      "format": "WAV",
+      "label": "WAV",
+      "extension": "wav",
+      "extensions": [
+        "wav"
+      ],
+      "category": "audio",
+      "targets": [
+        "MP3",
+        "WAV",
+        "FLAC",
+        "AAC",
+        "M4A",
+        "OGG",
+        "OPUS",
+        "AIFF",
+        "WMA"
+      ],
+      "notices": {}
+    },
+    {
+      "format": "FLAC",
+      "label": "FLAC",
+      "extension": "flac",
+      "extensions": [
+        "flac"
+      ],
+      "category": "audio",
+      "targets": [
+        "MP3",
+        "WAV",
+        "FLAC",
+        "AAC",
+        "M4A",
+        "OGG",
+        "OPUS",
+        "AIFF",
+        "WMA"
+      ],
+      "notices": {}
+    },
+    {
+      "format": "AAC",
+      "label": "AAC",
+      "extension": "aac",
+      "extensions": [
+        "aac"
+      ],
+      "category": "audio",
+      "targets": [
+        "MP3",
+        "WAV",
+        "FLAC",
+        "AAC",
+        "M4A",
+        "OGG",
+        "OPUS",
+        "AIFF",
+        "WMA"
+      ],
+      "notices": {}
+    },
+    {
+      "format": "OGG",
+      "label": "OGG",
+      "extension": "ogg",
+      "extensions": [
+        "ogg",
+        "oga"
+      ],
+      "category": "audio",
+      "targets": [
+        "MP3",
+        "WAV",
+        "FLAC",
+        "AAC",
+        "M4A",
+        "OGG",
+        "OPUS",
+        "AIFF",
+        "WMA"
+      ],
+      "notices": {}
+    },
+    {
+      "format": "M4A",
+      "label": "M4A",
+      "extension": "m4a",
+      "extensions": [
+        "m4a"
+      ],
+      "category": "audio",
+      "targets": [
+        "MP3",
+        "WAV",
+        "FLAC",
+        "AAC",
+        "M4A",
+        "OGG",
+        "OPUS",
+        "AIFF",
+        "WMA"
+      ],
+      "notices": {}
+    },
+    {
+      "format": "OPUS",
+      "label": "OPUS",
+      "extension": "opus",
+      "extensions": [
+        "opus"
+      ],
+      "category": "audio",
+      "targets": [
+        "MP3",
+        "WAV",
+        "FLAC",
+        "AAC",
+        "M4A",
+        "OGG",
+        "OPUS",
+        "AIFF",
+        "WMA"
+      ],
+      "notices": {}
+    },
+    {
+      "format": "AIFF",
+      "label": "AIFF",
+      "extension": "aiff",
+      "extensions": [
+        "aiff",
+        "aif"
+      ],
+      "category": "audio",
+      "targets": [
+        "MP3",
+        "WAV",
+        "FLAC",
+        "AAC",
+        "M4A",
+        "OGG",
+        "OPUS",
+        "AIFF",
+        "WMA"
+      ],
+      "notices": {}
+    },
+    {
+      "format": "WMA",
+      "label": "WMA",
+      "extension": "wma",
+      "extensions": [
+        "wma"
+      ],
+      "category": "audio",
+      "targets": [
+        "MP3",
+        "WAV",
+        "FLAC",
+        "AAC",
+        "M4A",
+        "OGG",
+        "OPUS",
+        "AIFF",
+        "WMA"
+      ],
+      "notices": {}
+    },
+    {
+      "format": "MP4",
+      "label": "MP4",
+      "extension": "mp4",
+      "extensions": [
+        "mp4",
+        "m4v"
+      ],
+      "category": "video",
+      "targets": [
+        "MP4",
+        "WEBM",
+        "MOV",
+        "MKV",
+        "AVI",
+        "TS",
+        "3GP",
+        "MP3",
+        "WAV",
+        "FLAC",
+        "AAC",
+        "M4A",
+        "OGG",
+        "OPUS",
+        "AIFF",
+        "WMA",
+        "GIF"
+      ],
+      "notices": {}
+    },
+    {
+      "format": "MOV",
+      "label": "MOV",
+      "extension": "mov",
+      "extensions": [
+        "mov"
+      ],
+      "category": "video",
+      "targets": [
+        "MP4",
+        "WEBM",
+        "MOV",
+        "MKV",
+        "AVI",
+        "TS",
+        "3GP",
+        "MP3",
+        "WAV",
+        "FLAC",
+        "AAC",
+        "M4A",
+        "OGG",
+        "OPUS",
+        "AIFF",
+        "WMA",
+        "GIF"
+      ],
+      "notices": {}
+    },
+    {
+      "format": "MKV",
+      "label": "MKV",
+      "extension": "mkv",
+      "extensions": [
+        "mkv"
+      ],
+      "category": "video",
+      "targets": [
+        "MP4",
+        "WEBM",
+        "MOV",
+        "MKV",
+        "AVI",
+        "TS",
+        "3GP",
+        "MP3",
+        "WAV",
+        "FLAC",
+        "AAC",
+        "M4A",
+        "OGG",
+        "OPUS",
+        "AIFF",
+        "WMA",
+        "GIF"
+      ],
+      "notices": {}
+    },
+    {
+      "format": "AVI",
+      "label": "AVI",
+      "extension": "avi",
+      "extensions": [
+        "avi"
+      ],
+      "category": "video",
+      "targets": [
+        "MP4",
+        "WEBM",
+        "MOV",
+        "MKV",
+        "AVI",
+        "TS",
+        "3GP",
+        "MP3",
+        "WAV",
+        "FLAC",
+        "AAC",
+        "M4A",
+        "OGG",
+        "OPUS",
+        "AIFF",
+        "WMA",
+        "GIF"
+      ],
+      "notices": {}
+    },
+    {
+      "format": "WEBM",
+      "label": "WEBM",
+      "extension": "webm",
+      "extensions": [
+        "webm"
+      ],
+      "category": "video",
+      "targets": [
+        "MP4",
+        "WEBM",
+        "MOV",
+        "MKV",
+        "AVI",
+        "TS",
+        "3GP",
+        "MP3",
+        "WAV",
+        "FLAC",
+        "AAC",
+        "M4A",
+        "OGG",
+        "OPUS",
+        "AIFF",
+        "WMA",
+        "GIF"
+      ],
+      "notices": {}
+    },
+    {
+      "format": "WMV",
+      "label": "WMV",
+      "extension": "wmv",
+      "extensions": [
+        "wmv"
+      ],
+      "category": "video",
+      "targets": [
+        "MP4",
+        "WEBM",
+        "MOV",
+        "MKV",
+        "AVI",
+        "TS",
+        "3GP",
+        "MP3",
+        "WAV",
+        "FLAC",
+        "AAC",
+        "M4A",
+        "OGG",
+        "OPUS",
+        "AIFF",
+        "WMA",
+        "GIF"
+      ],
+      "notices": {}
+    },
+    {
+      "format": "FLV",
+      "label": "FLV",
+      "extension": "flv",
+      "extensions": [
+        "flv"
+      ],
+      "category": "video",
+      "targets": [
+        "MP4",
+        "WEBM",
+        "MOV",
+        "MKV",
+        "AVI",
+        "TS",
+        "3GP",
+        "MP3",
+        "WAV",
+        "FLAC",
+        "AAC",
+        "M4A",
+        "OGG",
+        "OPUS",
+        "AIFF",
+        "WMA",
+        "GIF"
+      ],
+      "notices": {}
+    },
+    {
+      "format": "3GP",
+      "label": "3GP",
+      "extension": "3gp",
+      "extensions": [
+        "3gp",
+        "3gpp",
+        "3g2"
+      ],
+      "category": "video",
+      "targets": [
+        "MP4",
+        "WEBM",
+        "MOV",
+        "MKV",
+        "AVI",
+        "TS",
+        "3GP",
+        "MP3",
+        "WAV",
+        "FLAC",
+        "AAC",
+        "M4A",
+        "OGG",
+        "OPUS",
+        "AIFF",
+        "WMA",
+        "GIF"
+      ],
+      "notices": {}
+    },
+    {
+      "format": "TS",
+      "label": "TS",
+      "extension": "ts",
+      "extensions": [
+        "ts",
+        "m2ts"
+      ],
+      "category": "video",
+      "targets": [
+        "MP4",
+        "WEBM",
+        "MOV",
+        "MKV",
+        "AVI",
+        "TS",
+        "3GP",
+        "MP3",
+        "WAV",
+        "FLAC",
+        "AAC",
+        "M4A",
+        "OGG",
+        "OPUS",
+        "AIFF",
+        "WMA",
+        "GIF"
+      ],
+      "notices": {}
+    },
+    {
+      "format": "ZIP",
+      "label": "ZIP",
+      "extension": "zip",
+      "extensions": [
+        "zip"
+      ],
+      "category": "archive",
+      "targets": [
+        "7Z",
+        "TAR.GZ",
+        "ZIP"
+      ],
+      "notices": {}
+    },
+    {
+      "format": "TAR.GZ",
+      "label": "TAR.GZ",
+      "extension": "tar.gz",
+      "extensions": [
+        "tar.gz",
+        "tgz"
+      ],
+      "category": "archive",
+      "targets": [
+        "7Z",
+        "TAR.GZ",
+        "ZIP"
+      ],
+      "notices": {}
+    },
+    {
+      "format": "7Z",
+      "label": "7Z",
+      "extension": "7z",
+      "extensions": [
+        "7z"
+      ],
+      "category": "archive",
+      "targets": [
+        "7Z",
+        "TAR.GZ",
+        "ZIP"
+      ],
+      "notices": {}
+    },
+    {
+      "format": "GZ",
+      "label": "GZ",
+      "extension": "gz",
+      "extensions": [
+        "gz"
+      ],
+      "category": "archive",
+      "targets": [
+        "7Z",
+        "TAR.GZ",
+        "ZIP"
+      ],
+      "notices": {}
+    }
+  ]
+}

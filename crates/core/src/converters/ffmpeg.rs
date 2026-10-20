@@ -370,7 +370,7 @@ impl Converter for FfmpegConverter {
             append_audio_codec_args(&mut args, target);
         } else if target == Format::Gif {
             args.extend(["-an".into(), "-vf".into(),
-                "fps=15,scale=480:-1:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse".into()]);
+                format!("fps=15,scale={}:{}:force_original_aspect_ratio=decrease:flags=lanczos,split[s0][s1];[s0]palettegen=stats_mode=single[p];[s1][p]paletteuse=new=1:alpha_threshold={}", opts.max_width.unwrap_or(480), opts.max_height.unwrap_or(480), opts.gif_alpha_threshold)]);
         } else {
             args.extend([
                 "-map".into(),

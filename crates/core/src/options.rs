@@ -63,18 +63,35 @@ pub enum VideoPreset {
 impl Options {
     /// A single normalization boundary for every conversion engine.
     pub fn normalized(&self) -> Self {
+        use crate::contract::{
+            AVIF_SPEED, DIMENSION, DPI, GIF_ALPHA, QUALITY, VIDEO_AUDIO, VIDEO_CRF,
+        };
         let mut options = self.clone();
-        options.quality = options.quality.clamp(1, 100);
-        options.dpi = options.dpi.clamp(72, 600);
-        options.max_width = options.max_width.filter(|&v| v > 0).map(|v| v.min(32768));
-        options.max_height = options.max_height.filter(|&v| v > 0).map(|v| v.min(32768));
+        options.quality = options.quality.clamp(QUALITY.min as u8, QUALITY.max as u8);
+        options.dpi = options.dpi.clamp(DPI.min, DPI.max);
+        options.max_width = options
+            .max_width
+            .filter(|&v| v > 0)
+            .map(|v| v.min(DIMENSION.max));
+        options.max_height = options
+            .max_height
+            .filter(|&v| v > 0)
+            .map(|v| v.min(DIMENSION.max));
         options.output_dir = options
             .output_dir
             .filter(|p| !p.as_os_str().is_empty() && !p.to_string_lossy().trim().is_empty());
-        options.gif_alpha_threshold = options.gif_alpha_threshold.max(1);
-        options.avif_speed = options.avif_speed.clamp(1, 10);
-        options.video_crf = options.video_crf.clamp(18, 35);
-        options.video_audio_kbps = options.video_audio_kbps.clamp(64, 320);
+        options.gif_alpha_threshold = options
+            .gif_alpha_threshold
+            .clamp(GIF_ALPHA.min as u8, GIF_ALPHA.max as u8);
+        options.avif_speed = options
+            .avif_speed
+            .clamp(AVIF_SPEED.min as u8, AVIF_SPEED.max as u8);
+        options.video_crf = options
+            .video_crf
+            .clamp(VIDEO_CRF.min as u8, VIDEO_CRF.max as u8);
+        options.video_audio_kbps = options
+            .video_audio_kbps
+            .clamp(VIDEO_AUDIO.min as u16, VIDEO_AUDIO.max as u16);
         options
     }
 }

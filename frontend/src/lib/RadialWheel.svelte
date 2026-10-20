@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { t } from './i18n';
+  import { t, language } from './i18n';
   import { onDestroy } from 'svelte';
   import { createPetalPath, getPetalCenter, hitTestClient } from './geometry';
   import type { TargetFormatInfo } from './types';
@@ -339,8 +339,12 @@
     <div class="tooltip-container">
       <div class="tooltip-glass">
         <span class="tooltip-icon">⚠️</span>
-        <span>{$t(activeFormat.reason.toLowerCase().includes("ffmpeg") ? "Cần cài FFmpeg để dùng định dạng này." : "Định dạng này chưa dùng được.")}</span>
+        <span>{activeFormat.reason}</span>
       </div>
+    </div>
+  {:else if !conversionError && activeFormat?.available && activeFormat.notices?.length && status === 'idle'}
+    <div class="tooltip-container" role="note">
+      <div class="tooltip-glass"><span>{activeFormat.notices.map(notice => notice[$language]).join(' ')}</span></div>
     </div>
   {/if}
 </div>

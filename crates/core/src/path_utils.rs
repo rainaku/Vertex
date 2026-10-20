@@ -15,10 +15,14 @@ pub fn ipc_path(raw: &str) -> std::result::Result<PathBuf, String> {
         .get(..5)
         .is_some_and(|s| s.eq_ignore_ascii_case("file:"))
     {
-        url::Url::parse(raw)
+        let path = url::Url::parse(raw)
             .map_err(|e| e.to_string())?
             .to_file_path()
-            .map_err(|_| "Invalid file URL".into())
+            .map_err(|_| "Invalid file URL".to_string())?;
+        if path.to_string_lossy().contains('\0') {
+            return Err("Invalid NUL character in file URL".into());
+        }
+        Ok(path)
     } else if raw.is_empty() || raw.contains('\0') {
         Err("Invalid empty path or NUL character".into())
     } else {
@@ -140,7 +144,10 @@ pub fn stage_output(output: &Path) -> Result<tempfile::TempPath> {
         .prefix(".vertex-")
         .suffix(&format!(
             ".{}",
-            output.extension().and_then(|s| s.to_str()).unwrap_or("tmp")
+            Format::from_path_extension(output)
+                .map(|f| f.extension())
+                .or_else(|| output.extension().and_then(|s| s.to_str()))
+                .unwrap_or("tmp")
         ))
         .tempfile_in(parent_dir(output))
         .map(|file| file.into_temp_path())

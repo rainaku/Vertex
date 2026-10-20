@@ -21,6 +21,20 @@ impl Default for Registry {
         let mut reg = Self::new();
         reg.register(Arc::new(PureRustImageConverter::default()));
         reg.register(Arc::new(FfmpegConverter::default()));
+        reg.register(Arc::new(crate::converters::data::DataConverter));
+        reg.register(Arc::new(crate::converters::data::TextConverter));
+        reg.register(Arc::new(crate::converters::archive::ArchiveConverter));
+        reg.register(Arc::new(crate::converters::render::SvgConverter));
+        reg.register(Arc::new(crate::converters::render::PdfConverter));
+        reg.register(Arc::new(crate::converters::render::PdfTextConverter));
+        reg.register(Arc::new(crate::converters::render::AvifFfmpegConverter));
+        reg.register(Arc::new(crate::converters::render::MagickImageConverter(
+            Format::Avif,
+        )));
+        reg.register(Arc::new(crate::converters::render::MagickImageConverter(
+            Format::Heic,
+        )));
+        reg.register(Arc::new(crate::converters::office::OfficeConverter));
         reg
     }
 }
@@ -34,6 +48,19 @@ impl Registry {
 
     pub fn register(&mut self, converter: Arc<dyn Converter>) {
         self.converters.push(converter);
+    }
+
+    pub(crate) fn declared_targets(&self, from: Format) -> Vec<Format> {
+        let mut targets: Vec<_> = self
+            .converters
+            .iter()
+            .filter(|c| c.sources().contains(&from))
+            .flat_map(|c| c.targets(from))
+            .map(|f| (f, Availability::Ok))
+            .collect();
+        sort_targets_by_affinity(&mut targets, from.category());
+        targets.dedup_by_key(|(f, _)| *f);
+        targets.into_iter().map(|(f, _)| f).collect()
     }
 
     /// Find all target formats available from a source format, with their availability.
@@ -151,10 +178,13 @@ impl Registry {
         };
         let mut destination = resolve_target_path(input, target, &opts)?;
         let mut staged = crate::path_utils::stage_output(&destination)?;
-        let intermediate = tempfile::tempdir().map_err(|source| VertexError::Io {
-            path: std::env::temp_dir(),
-            source,
-        })?;
+        let intermediate = (route.len() > 1)
+            .then(tempfile::tempdir)
+            .transpose()
+            .map_err(|source| VertexError::Io {
+                path: std::env::temp_dir(),
+                source,
+            })?;
         let mut current = input.to_path_buf();
         let mut current_format = from;
         let count = route.len();
@@ -164,6 +194,8 @@ impl Registry {
                 staged.to_path_buf()
             } else {
                 intermediate
+                    .as_ref()
+                    .expect("multi-hop workspace")
                     .path()
                     .join(format!("step-{index}.{}", format.extension()))
             };

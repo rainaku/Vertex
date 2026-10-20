@@ -1,4 +1,5 @@
 pub mod cancel;
+pub mod contract;
 pub mod converter;
 pub mod converters;
 pub mod detect;

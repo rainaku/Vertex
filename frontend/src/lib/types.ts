@@ -22,6 +22,7 @@ export interface TargetFormatInfo {
   category: Category | (string & {});
   available: boolean;
   reason?: string | null;
+  notices?: { vi: string; en: string }[];
 }
 
 export interface BatchInfo {
@@ -49,7 +50,7 @@ export interface Options {
   max_width?: number | null;
   max_height?: number | null;
   strip_metadata: boolean;
-  output_dir?: string;
+  output_dir?: string | null;
   collision_policy: 'rename_with_suffix' | 'fail_if_exists' | 'overwrite';
   jpeg_background?: [number, number, number];
   gif_alpha_threshold?: number;

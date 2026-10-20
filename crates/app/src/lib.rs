@@ -53,6 +53,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             detect_file,
+            get_input_formats,
             get_available_targets,
             get_batch_info,
             convert_file,

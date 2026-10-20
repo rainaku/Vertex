@@ -84,6 +84,23 @@ pub fn detect_format<P: AsRef<Path>>(path: P) -> Result<Format> {
     if bytes.starts_with(b"OggS") && bytes.windows(8).any(|w| w == b"OpusHead") {
         return Ok(Format::Opus);
     }
+    if bytes.starts_with(b"\x1f\x8b") {
+        file.rewind().map_err(io)?;
+        let mut tar_header = [0; 512];
+        let decoded = read_prefix(
+            &mut flate2::read::GzDecoder::new(&mut file),
+            &mut tar_header,
+        );
+        return Ok(
+            if extension == Some(Format::TarGz)
+                || decoded.is_ok_and(|n| n == 512 && tar_header.get(257..262) == Some(b"ustar"))
+            {
+                Format::TarGz
+            } else {
+                Format::Gz
+            },
+        );
+    }
     if bytes.get(4..8) == Some(b"ftyp") {
         let brand = bytes.get(8..12).unwrap_or_default();
         if brand.starts_with(b"3g") {
