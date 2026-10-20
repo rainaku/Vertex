@@ -75,3 +75,29 @@ it('shows actual engine requirements and route limitations in the wheel', async 
   await view.rerender({ formats: [{ ...missing, available: true, notices: [{ vi: 'Trang đầu', en: 'First page only' }] }], activeIndex: 0 });
   expect(view.getByRole('note').textContent).toContain('First page only');
 });
+
+it('explains editable PDF to Word and plain-text formatting loss before conversion', async () => {
+  language.set('en');
+  const bridge = await import('./tauri-bridge');
+  const pdfTargets = await bridge.getAvailableTargets('PDF');
+  const word = pdfTargets.find(target => target.format === 'DOCX')!;
+  const view = render(RadialWheel, { formats: [word], activeIndex: 0 });
+  expect(view.getByRole('note').textContent).toContain('Editable Word text and tables');
+  expect(view.getByRole('note').textContent).toContain('OCR');
+  const docTargets = await bridge.getAvailableTargets('DOC');
+  await view.rerender({ formats: [docTargets.find(target => target.format === 'TXT')!], activeIndex: 0 });
+  expect(view.getByRole('note').textContent).toContain('plain text only');
+});
+
+it('shows dependency guidance only in the selected language', async () => {
+  const reason = 'Thiếu pdf2docx. / PDF to Word requires pdf2docx.';
+  const formats = [{ format: 'DOCX', label: 'DOCX', extension: 'docx', category: 'document', available: false, reason }];
+  language.set('vi');
+  const view = render(RadialWheel, { formats, activeIndex: 0 });
+  expect(view.getByRole('note').textContent).toContain('Thiếu pdf2docx.');
+  expect(view.queryByText('PDF to Word requires pdf2docx.')).toBeNull();
+  language.set('en');
+  await view.rerender({ formats, activeIndex: 0 });
+  expect(view.getByRole('note').textContent).toContain('PDF to Word requires pdf2docx.');
+  expect(view.queryByText('Thiếu pdf2docx.')).toBeNull();
+});

@@ -242,7 +242,7 @@ fn gzip_payload_is_a_real_input_format_and_compound_tar_names_are_preserved() {
     assert_eq!(detect_format(&input).unwrap(), Format::Gz);
     let output = convert(&registry, &input, Format::Zip);
     let mut zip = zip::ZipArchive::new(fs::File::open(output).unwrap()).unwrap();
-    assert_eq!(zip.by_index(0).unwrap().name(), "sample.txt");
+    assert_eq!(zip.by_index(0).unwrap().name().unwrap(), "sample.txt");
     let input = dir.path().join("sample.zip");
     make_zip(&input);
     let tar = convert(&registry, &input, Format::TarGz);

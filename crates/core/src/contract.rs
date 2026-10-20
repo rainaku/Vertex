@@ -26,10 +26,33 @@ pub fn conversion_notice(from: Format, to: Format) -> Option<ConversionNotice> {
             "Xuất trang đầu của PDF theo DPI đã chọn.",
             "Renders the first PDF page at the selected DPI.",
         )
+    } else if from == Format::Pdf && to == Format::Docx {
+        (
+            "Word có thể sửa chữ và bảng; bố cục có thể thay đổi. PDF scan cần OCR trước; ảnh không tự thành chữ.",
+            "Editable Word text and tables; layout may change. Scanned PDFs need OCR first; images do not become text.",
+        )
     } else if from == Format::Pdf && to == Format::Txt {
         (
-            "Trích xuất lớp văn bản của toàn bộ PDF; không nhận dạng OCR.",
-            "Extracts the PDF text layer from all pages; no OCR.",
+            "Trích xuất chữ toàn bộ PDF, giữ khoảng cách tương đối; mất font, ảnh và định dạng bảng. Không OCR.",
+            "Extracts text from all PDF pages with approximate spacing; fonts, images and table formatting are lost. No OCR.",
+        )
+    } else if from.category() == Category::Document && to == Format::Txt {
+        (
+            "TXT chỉ giữ văn bản; không lưu font, màu, ảnh hoặc định dạng bảng.",
+            "TXT retains plain text only; fonts, colors, images and table formatting are not preserved.",
+        )
+    } else if from.category() == Category::Document && to == Format::Pdf {
+        (
+            "Giữ bố cục bằng bộ xuất tài liệu; cần cài font gốc để hạn chế thay font và lệch trang.",
+            "Exports document layout; install the original fonts to reduce font substitution and pagination changes.",
+        )
+    } else if from.category() == Category::Document
+        && matches!(to, Format::Doc | Format::Docx | Format::Odt | Format::Rtf | Format::Html)
+        && !matches!(from, Format::Txt | Format::Md)
+    {
+        (
+            "Giữ định dạng trong khả năng của định dạng đích; font thiếu và bố cục phức tạp có thể thay đổi.",
+            "Preserves formatting supported by the target; missing fonts and complex layouts may cause changes.",
         )
     } else if matches!(from, Format::Xlsx | Format::Xls | Format::Ods)
         && matches!(to, Format::Csv | Format::Tsv)

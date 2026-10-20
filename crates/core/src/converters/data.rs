@@ -545,14 +545,7 @@ impl Converter for TextConverter {
     ) -> Result<()> {
         cancel.check()?;
         crate::path_utils::ensure_distinct(input.path, output)?;
-        let file = std::fs::File::open(input.path).map_err(|e| io_error(input.path, e))?;
-        let mut text = String::new();
-        file.take(MAX_DATA_SIZE + 1)
-            .read_to_string(&mut text)
-            .map_err(|e| io_error(input.path, e))?;
-        if text.len() as u64 > MAX_DATA_SIZE {
-            return Err(invalid("Text input is limited to 64 MiB per conversion"));
-        }
+        let text = super::text::read_unicode(input.path, cancel)?;
         let target = Format::from_path_extension(output);
         let result = if target == Some(Format::Html) {
             let mut body = String::new();
@@ -562,7 +555,9 @@ impl Converter for TextConverter {
                     pulldown_cmark::Parser::new_ext(&text, pulldown_cmark::Options::all()),
                 );
             } else {
-                body = format!("<pre>{}</pre>", quick_xml::escape::escape(&text));
+                // HTML strips the first newline after <pre>; supply that newline
+                // ourselves so an input's leading blank line remains visible.
+                body = format!("<pre>\n{}</pre>", quick_xml::escape::escape(&text));
             }
             format!("<!DOCTYPE html><html><head><meta charset=\"utf-8\"></head><body>{body}</body></html>")
         } else if target == Some(Format::Txt) && input.format == Format::Md {

@@ -30,6 +30,7 @@ pub enum Format {
 
     // Documents
     Pdf,
+    Doc,
     Docx,
     Odt,
     Rtf,
@@ -98,6 +99,7 @@ impl Format {
         Self::Ico,
         Self::Svg,
         Self::Pdf,
+        Self::Doc,
         Self::Docx,
         Self::Odt,
         Self::Rtf,
@@ -179,6 +181,7 @@ impl Format {
             Format::Ico => "ICO",
             Format::Svg => "SVG",
             Format::Pdf => "PDF",
+            Format::Doc => "DOC",
             Format::Docx => "DOCX",
             Format::Odt => "ODT",
             Format::Rtf => "RTF",
@@ -235,6 +238,7 @@ impl Format {
             Format::Ico => "ico",
             Format::Svg => "svg",
             Format::Pdf => "pdf",
+            Format::Doc => "doc",
             Format::Docx => "docx",
             Format::Odt => "odt",
             Format::Rtf => "rtf",
@@ -292,6 +296,7 @@ impl Format {
             | Format::Svg => Category::Image,
 
             Format::Pdf
+            | Format::Doc
             | Format::Docx
             | Format::Odt
             | Format::Rtf
@@ -385,6 +390,7 @@ impl Format {
             "image/x-icon" | "image/vnd.microsoft.icon" => Some(Format::Ico),
             "image/svg+xml" => Some(Format::Svg),
             "application/pdf" => Some(Format::Pdf),
+            "application/msword" => Some(Format::Doc),
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document" => {
                 Some(Format::Docx)
             }

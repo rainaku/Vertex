@@ -27,6 +27,7 @@ impl Default for Registry {
         reg.register(Arc::new(crate::converters::render::SvgConverter));
         reg.register(Arc::new(crate::converters::render::PdfConverter));
         reg.register(Arc::new(crate::converters::render::PdfTextConverter));
+        reg.register(Arc::new(crate::converters::pdf_document::PdfDocumentConverter));
         reg.register(Arc::new(crate::converters::render::AvifFfmpegConverter));
         reg.register(Arc::new(crate::converters::render::MagickImageConverter(
             Format::Avif,
@@ -357,6 +358,7 @@ fn format_priority(fmt: Format) -> usize {
         Format::Html => 5,
         Format::Rtf => 6,
         Format::Odt => 7,
+        Format::Doc => 8,
 
         // Spreadsheets
         Format::Xlsx => 1,

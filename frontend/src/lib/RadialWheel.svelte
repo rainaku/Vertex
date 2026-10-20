@@ -32,6 +32,15 @@
   }));
 
   $: activeFormat = activeIndex >= 0 && activeIndex < formats.length ? formats[activeIndex] : null;
+  // Backend dependency reasons currently carry Vietnamese / English in one
+  // string. Only split the explicit bilingual separator, not path slashes.
+  $: activeReason = localizeReason(activeFormat?.reason, $language);
+  function localizeReason(reason: string | null | undefined, locale: 'vi' | 'en'): string {
+    if (!reason) return '';
+    const separator = reason.indexOf(' / ');
+    if (separator < 0) return reason;
+    return (locale === 'vi' ? reason.slice(0, separator) : reason.slice(separator + 3)).trim();
+  }
 
   let dwellTimer: ReturnType<typeof setTimeout> | null = null;
   let dwellCooldown = false;
@@ -337,10 +346,10 @@
 
   <!-- Missing Engine Tooltip -->
   {#if !conversionError && activeFormat && !activeFormat.available && activeFormat.reason}
-    <div class="tooltip-container">
+    <div class="tooltip-container" role="note">
       <div class="tooltip-glass">
         <span class="tooltip-icon">⚠️</span>
-        <span>{activeFormat.reason}</span>
+        <span>{activeReason}</span>
       </div>
     </div>
   {:else if !conversionError && activeFormat?.available && activeFormat.notices?.length && status === 'idle'}
@@ -582,9 +591,11 @@
   /* Tooltip for disabled engine */
   .tooltip-container {
     position: absolute;
-    top: -45px;
+    bottom: calc(100% + 12px);
     left: 50%;
     transform: translateX(-50%);
+    width: 560px;
+    max-width: 110%;
     z-index: 120;
     pointer-events: none;
     animation: wheelTooltipSlideUp 0.2s ease-out;
@@ -592,22 +603,26 @@
 
   .tooltip-glass {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     gap: 8px;
     background: #000000;
     border: none;
-    border-radius: 9999px;
-    padding: 6px 14px;
+    border-radius: 16px;
+    padding: 10px 16px;
     color: #ffffff;
     font-family: var(--font-family);
     font-size: 16px;
     font-weight: 600;
-    white-space: nowrap;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    line-height: 1.4;
+    text-align: center;
     box-shadow: 0 10px 28px rgba(0, 0, 0, 0.75);
   }
 
   .conversion-error {
     top: 320px;
+    bottom: auto;
     width: 400px;
     max-width: 85%;
   }

@@ -85,7 +85,7 @@ impl Converter for ArchiveConverter {
                     {
                         return Err(invalid("Archive links are unsupported"));
                     }
-                    let name = entry.name().to_owned();
+                    let name = entry.name().map_err(invalid)?.into_owned();
                     entries.add(&name, entry.is_dir(), &mut entry)?;
                 }
             }

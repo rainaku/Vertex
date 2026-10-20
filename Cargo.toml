@@ -30,7 +30,7 @@ tauri-plugin-dialog = "2.2"
 tauri-plugin-notification = "2.2"
 tauri-plugin-global-shortcut = "2.2"
 tauri-plugin-autostart = "2"
-tauri-plugin-updater = "2"
+tauri-plugin-updater = { version = "2", default-features = false, features = ["rustls-tls", "system-proxy"] }
 tauri-plugin-process = "2"
 sha2 = "0.10"
 regex = "1.11"

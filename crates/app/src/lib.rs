@@ -15,8 +15,55 @@ use vertex_core::Registry;
 
 use commands::*;
 
+struct SingleInstanceGuard {
+    #[cfg(windows)]
+    handle: isize,
+}
+
+impl Drop for SingleInstanceGuard {
+    fn drop(&mut self) {
+        #[cfg(windows)]
+        if self.handle != 0 {
+            unsafe {
+                windows_sys::Win32::Foundation::CloseHandle(self.handle as _);
+            }
+        }
+    }
+}
+
+fn acquire_single_instance_guard() -> Option<SingleInstanceGuard> {
+    #[cfg(windows)]
+    unsafe {
+        use windows_sys::Win32::Foundation::{CloseHandle, GetLastError, ERROR_ALREADY_EXISTS};
+        use windows_sys::Win32::System::Threading::CreateMutexW;
+
+        let name: Vec<u16> = "Local\\VertexSingleInstanceMutex\0"
+            .encode_utf16()
+            .collect();
+        let handle = CreateMutexW(std::ptr::null(), 1, name.as_ptr());
+        if handle.is_null() {
+            return None;
+        }
+        if GetLastError() == ERROR_ALREADY_EXISTS {
+            CloseHandle(handle);
+            return None;
+        }
+        Some(SingleInstanceGuard {
+            handle: handle as isize,
+        })
+    }
+    #[cfg(not(windows))]
+    {
+        Some(SingleInstanceGuard {})
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let Some(_instance_guard) = acquire_single_instance_guard() else {
+        return;
+    };
+
     tracing_subscriber::fmt()
         .with_ansi(false)
         .with_writer(logging::RedactedWriter::default)
@@ -229,4 +276,20 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("error while running Vertex application");
+}
+
+#[cfg(all(test, windows))]
+mod tests {
+    use super::acquire_single_instance_guard;
+
+    #[test]
+    fn single_instance_guard_blocks_second_instance_until_dropped() {
+        let first = acquire_single_instance_guard();
+        assert!(first.is_some(), "first instance should acquire mutex");
+        let second = acquire_single_instance_guard();
+        assert!(second.is_none(), "second instance must be blocked");
+        drop(first);
+        let third = acquire_single_instance_guard();
+        assert!(third.is_some(), "instance after drop should acquire mutex");
+    }
 }

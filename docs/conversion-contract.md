@@ -19,7 +19,8 @@ Rust tests compare the entire snapshot with the live registry. Frontend tests ex
 | HEIC/HEIF | Same raster outputs | ImageMagick with a HEIC decoder (libheif) |
 | SVG | Same raster outputs | resvg; DPI applies to physical units such as inches |
 | PDF | Same raster outputs; TXT | Poppler `pdftoppm` / `pdftotext` |
-| DOCX, ODT, RTF, TXT, HTML, Markdown | DOCX, ODT, RTF, TXT, HTML, PDF (excluding identical office formats) | LibreOffice; Markdown first becomes UTF-8 HTML |
+| PDF | DOCX with editable paragraphs and tables | Local `pdf2docx` CLI |
+| DOC, DOCX, ODT, RTF, TXT, HTML, Markdown | DOC, DOCX, ODT, RTF, TXT, HTML, PDF (excluding identical office formats) | LibreOffice; Markdown first becomes UTF-8 HTML |
 | Markdown | HTML, TXT | Rust Markdown parser |
 | TXT | HTML | Rust escaping and UTF-8 HTML |
 | XLSX, XLS, ODS, CSV, TSV | Other formats in this group, PDF | LibreOffice; native Rust handles CSV/TSV pairs |
@@ -28,12 +29,15 @@ Rust tests compare the entire snapshot with the live registry. Frontend tests ex
 | ZIP, TAR.GZ/TGZ, 7Z, GZ | ZIP, TAR.GZ, 7Z | Rust archive readers/writers |
 | Audio, video, GIF | Existing audio/video routes | FFmpeg |
 
-HEIC and SVG are input-only. PDF supports rendering and text extraction, rather than an editable PDF-to-Office conversion. Raster inputs do not become vector SVGs. Bare `.gz` contains one payload; `.tar.gz` and `.tgz` preserve archive entries. Gzip output is not offered for archives containing multiple files.
+HEIC and SVG are input-only. PDF supports rendering, text extraction and editable Word reconstruction. Raster inputs do not become vector SVGs. Bare `.gz` contains one payload; `.tar.gz` and `.tgz` preserve archive entries. Gzip output is not offered for archives containing multiple files.
 
 ## Options and output semantics
 
 - `quality` applies to JPG and AVIF. WebP remains lossless; PNG/TIFF do not use this quality value. `avif_speed` applies to the Rust AVIF encoder.
 - `dpi` is used by PDF rasterization and by SVG physical-unit conversion. PDF exports the first page; PDF-to-TXT extracts the text layer from all pages and does not perform OCR.
+- PDF-to-DOCX reconstructs paragraphs, tables and images from all pages using pdf2docx. It does not rasterize pages or use image DPI/resize/quality controls. Fonts and complex layouts may differ; install the original fonts for closer results. Images (including scanned text) remain images; there is no OCR. Image-only/empty Word output is rejected with an OCR message. In mixed PDFs, scanned pages remain non-editable images. Page errors abort the whole conversion, rather than silently dropping failed pages. Jobs have a five-minute timeout and publish only after checking the DOCX text layer.
+- DOC/DOCX/ODT/RTF conversions preserve the features supported by both formats; exact layout equality is not guaranteed. TXT exports discard fonts, colors, images and table formatting. These limitations are shown in the wheel before conversion.
+- TXT/Markdown input accepts strict UTF-8 (with or without a BOM) and UTF-16LE/BE with a BOM. It retains Unicode, tabs and blank lines. Invalid/ambiguous encodings, including legacy ANSI and BOM-less UTF-16 containing NULs, fail with an encoding message instead of replacing characters. Save such files as UTF-8 first. Text input is limited to 64 MiB.
 - Maximum dimensions apply to raster images, PDF/SVG renders and video. ICO has its own 256-pixel format limit. Raster conversions use the first image/frame for animated or multipage image inputs.
 - JPEG background fill replaces transparency. GIF alpha threshold applies to still-image GIF output and to FFmpeg GIF palette conversion.
 - Metadata stripping is an image/media option. Preservation depends on the source decoder and output format; AVIF decoding through FFmpeg does not retain the original EXIF/ICC metadata. Office exports use the corresponding LibreOffice export filter.
@@ -51,7 +55,8 @@ Place tools in `PATH`, or `bin` next to the Vertex executable. Standard LibreOff
 - [LibreOffice command-line parameters](https://help.libreoffice.org/latest/en-US/text/shared/guide/start_parameters.html) and [conversion filters](https://help.libreoffice.org/latest/en-US/text/shared/guide/convertfilters.html). Jobs use separate temporary profiles to avoid conflicts with a running GUI or other conversions. Macros are disabled. The process tree is terminated on timeout/cancellation on Windows.
 - [LibreOffice CSV filter parameters](https://help.libreoffice.org/latest/en-US/text/shared/guide/csv_params.html) define UTF-8, explicit delimiters and first-sheet export.
 - [Poppler](https://poppler.freedesktop.org/) provides `pdftoppm` and `pdftotext`.
+- [pdf2docx CLI](https://pdf2docx.readthedocs.io/en/stable/quickstart.cli.html) provides editable PDF-to-DOCX reconstruction. On Windows, run `.\scripts\Install-DocumentTools.ps1` once with Python installed (or pass `-Python C:\path\to\python.exe`). This explicit setup installs pdf2docx 0.5.13 into `%USERPROFILE%\.vertex\tools\pdf2docx`, which Vertex detects without changing `PATH`. Alternatively install with `python -m pip install pdf2docx` and put its executable directory (usually Python's `Scripts` directory on Windows) on `PATH`. Vertex invokes `pdf2docx convert` with `--ignore_page_error=False --raw_exceptions=True --multi_processing=False`. The app does not install packages automatically. Conversions run locally.
 - [ImageMagick supported formats](https://imagemagick.org/formats/) describe the required delegates. Vertex probes readable AVIF/HEIC support, rather than assuming the executable includes those decoders.
 - [FFmpeg](https://ffmpeg.org/download.html) provides media conversion and AVIF decoding.
 
-Run `npm test`, `npm run check`, `npm run build` in `frontend`, and `cargo test --workspace --locked`, `cargo clippy --workspace --all-targets --locked -- -D warnings` at the repository root. AVIF/PDF integration tests run when FFmpeg/Poppler are installed. LibreOffice and ImageMagick paths require installations with the relevant codecs for end-to-end verification.
+Run `npm test`, `npm run check`, `npm run build` in `frontend`, and `cargo test --workspace --locked`, `cargo clippy --workspace --all-targets --locked -- -D warnings` at the repository root. AVIF/PDF integration tests run when FFmpeg/Poppler are installed. Editable Word integration runs when `pdf2docx` is on `PATH` (verified with pdf2docx 0.5.13); it checks text, tables, font styling, mixed page sizes, cancellation and failed-output protection. LibreOffice and ImageMagick paths require installations with the relevant codecs for end-to-end verification.

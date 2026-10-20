@@ -271,6 +271,7 @@
       ],
       "category": "document",
       "targets": [
+        "DOCX",
         "TXT",
         "PNG",
         "JPG",
@@ -289,6 +290,10 @@
         "BMP": {
           "vi": "Xuất trang đầu của PDF theo DPI đã chọn.",
           "en": "Renders the first PDF page at the selected DPI."
+        },
+        "DOCX": {
+          "vi": "Word có thể sửa chữ và bảng; bố cục có thể thay đổi. PDF scan cần OCR trước; ảnh không tự thành chữ.",
+          "en": "Editable Word text and tables; layout may change. Scanned PDFs need OCR first; images do not become text."
         },
         "GIF": {
           "vi": "Xuất trang đầu của PDF theo DPI đã chọn.",
@@ -311,12 +316,55 @@
           "en": "Renders the first PDF page at the selected DPI."
         },
         "TXT": {
-          "vi": "Trích xuất lớp văn bản của toàn bộ PDF; không nhận dạng OCR.",
-          "en": "Extracts the PDF text layer from all pages; no OCR."
+          "vi": "Trích xuất chữ toàn bộ PDF, giữ khoảng cách tương đối; mất font, ảnh và định dạng bảng. Không OCR.",
+          "en": "Extracts text from all PDF pages with approximate spacing; fonts, images and table formatting are lost. No OCR."
         },
         "WEBP": {
           "vi": "Xuất trang đầu của PDF theo DPI đã chọn.",
           "en": "Renders the first PDF page at the selected DPI."
+        }
+      }
+    },
+    {
+      "format": "DOC",
+      "label": "DOC",
+      "extension": "doc",
+      "extensions": [
+        "doc"
+      ],
+      "category": "document",
+      "targets": [
+        "PDF",
+        "DOCX",
+        "TXT",
+        "HTML",
+        "RTF",
+        "ODT"
+      ],
+      "notices": {
+        "DOCX": {
+          "vi": "Giữ định dạng trong khả năng của định dạng đích; font thiếu và bố cục phức tạp có thể thay đổi.",
+          "en": "Preserves formatting supported by the target; missing fonts and complex layouts may cause changes."
+        },
+        "HTML": {
+          "vi": "Giữ định dạng trong khả năng của định dạng đích; font thiếu và bố cục phức tạp có thể thay đổi.",
+          "en": "Preserves formatting supported by the target; missing fonts and complex layouts may cause changes."
+        },
+        "ODT": {
+          "vi": "Giữ định dạng trong khả năng của định dạng đích; font thiếu và bố cục phức tạp có thể thay đổi.",
+          "en": "Preserves formatting supported by the target; missing fonts and complex layouts may cause changes."
+        },
+        "PDF": {
+          "vi": "Giữ bố cục bằng bộ xuất tài liệu; cần cài font gốc để hạn chế thay font và lệch trang.",
+          "en": "Exports document layout; install the original fonts to reduce font substitution and pagination changes."
+        },
+        "RTF": {
+          "vi": "Giữ định dạng trong khả năng của định dạng đích; font thiếu và bố cục phức tạp có thể thay đổi.",
+          "en": "Preserves formatting supported by the target; missing fonts and complex layouts may cause changes."
+        },
+        "TXT": {
+          "vi": "TXT chỉ giữ văn bản; không lưu font, màu, ảnh hoặc định dạng bảng.",
+          "en": "TXT retains plain text only; fonts, colors, images and table formatting are not preserved."
         }
       }
     },
@@ -333,9 +381,35 @@
         "TXT",
         "HTML",
         "RTF",
-        "ODT"
+        "ODT",
+        "DOC"
       ],
-      "notices": {}
+      "notices": {
+        "DOC": {
+          "vi": "Giữ định dạng trong khả năng của định dạng đích; font thiếu và bố cục phức tạp có thể thay đổi.",
+          "en": "Preserves formatting supported by the target; missing fonts and complex layouts may cause changes."
+        },
+        "HTML": {
+          "vi": "Giữ định dạng trong khả năng của định dạng đích; font thiếu và bố cục phức tạp có thể thay đổi.",
+          "en": "Preserves formatting supported by the target; missing fonts and complex layouts may cause changes."
+        },
+        "ODT": {
+          "vi": "Giữ định dạng trong khả năng của định dạng đích; font thiếu và bố cục phức tạp có thể thay đổi.",
+          "en": "Preserves formatting supported by the target; missing fonts and complex layouts may cause changes."
+        },
+        "PDF": {
+          "vi": "Giữ bố cục bằng bộ xuất tài liệu; cần cài font gốc để hạn chế thay font và lệch trang.",
+          "en": "Exports document layout; install the original fonts to reduce font substitution and pagination changes."
+        },
+        "RTF": {
+          "vi": "Giữ định dạng trong khả năng của định dạng đích; font thiếu và bố cục phức tạp có thể thay đổi.",
+          "en": "Preserves formatting supported by the target; missing fonts and complex layouts may cause changes."
+        },
+        "TXT": {
+          "vi": "TXT chỉ giữ văn bản; không lưu font, màu, ảnh hoặc định dạng bảng.",
+          "en": "TXT retains plain text only; fonts, colors, images and table formatting are not preserved."
+        }
+      }
     },
     {
       "format": "ODT",
@@ -350,9 +424,35 @@
         "DOCX",
         "TXT",
         "HTML",
-        "RTF"
+        "RTF",
+        "DOC"
       ],
-      "notices": {}
+      "notices": {
+        "DOC": {
+          "vi": "Giữ định dạng trong khả năng của định dạng đích; font thiếu và bố cục phức tạp có thể thay đổi.",
+          "en": "Preserves formatting supported by the target; missing fonts and complex layouts may cause changes."
+        },
+        "DOCX": {
+          "vi": "Giữ định dạng trong khả năng của định dạng đích; font thiếu và bố cục phức tạp có thể thay đổi.",
+          "en": "Preserves formatting supported by the target; missing fonts and complex layouts may cause changes."
+        },
+        "HTML": {
+          "vi": "Giữ định dạng trong khả năng của định dạng đích; font thiếu và bố cục phức tạp có thể thay đổi.",
+          "en": "Preserves formatting supported by the target; missing fonts and complex layouts may cause changes."
+        },
+        "PDF": {
+          "vi": "Giữ bố cục bằng bộ xuất tài liệu; cần cài font gốc để hạn chế thay font và lệch trang.",
+          "en": "Exports document layout; install the original fonts to reduce font substitution and pagination changes."
+        },
+        "RTF": {
+          "vi": "Giữ định dạng trong khả năng của định dạng đích; font thiếu và bố cục phức tạp có thể thay đổi.",
+          "en": "Preserves formatting supported by the target; missing fonts and complex layouts may cause changes."
+        },
+        "TXT": {
+          "vi": "TXT chỉ giữ văn bản; không lưu font, màu, ảnh hoặc định dạng bảng.",
+          "en": "TXT retains plain text only; fonts, colors, images and table formatting are not preserved."
+        }
+      }
     },
     {
       "format": "RTF",
@@ -367,9 +467,35 @@
         "DOCX",
         "TXT",
         "HTML",
-        "ODT"
+        "ODT",
+        "DOC"
       ],
-      "notices": {}
+      "notices": {
+        "DOC": {
+          "vi": "Giữ định dạng trong khả năng của định dạng đích; font thiếu và bố cục phức tạp có thể thay đổi.",
+          "en": "Preserves formatting supported by the target; missing fonts and complex layouts may cause changes."
+        },
+        "DOCX": {
+          "vi": "Giữ định dạng trong khả năng của định dạng đích; font thiếu và bố cục phức tạp có thể thay đổi.",
+          "en": "Preserves formatting supported by the target; missing fonts and complex layouts may cause changes."
+        },
+        "HTML": {
+          "vi": "Giữ định dạng trong khả năng của định dạng đích; font thiếu và bố cục phức tạp có thể thay đổi.",
+          "en": "Preserves formatting supported by the target; missing fonts and complex layouts may cause changes."
+        },
+        "ODT": {
+          "vi": "Giữ định dạng trong khả năng của định dạng đích; font thiếu và bố cục phức tạp có thể thay đổi.",
+          "en": "Preserves formatting supported by the target; missing fonts and complex layouts may cause changes."
+        },
+        "PDF": {
+          "vi": "Giữ bố cục bằng bộ xuất tài liệu; cần cài font gốc để hạn chế thay font và lệch trang.",
+          "en": "Exports document layout; install the original fonts to reduce font substitution and pagination changes."
+        },
+        "TXT": {
+          "vi": "TXT chỉ giữ văn bản; không lưu font, màu, ảnh hoặc định dạng bảng.",
+          "en": "TXT retains plain text only; fonts, colors, images and table formatting are not preserved."
+        }
+      }
     },
     {
       "format": "TXT",
@@ -386,9 +512,15 @@
         "DOCX",
         "HTML",
         "RTF",
-        "ODT"
+        "ODT",
+        "DOC"
       ],
-      "notices": {}
+      "notices": {
+        "PDF": {
+          "vi": "Giữ bố cục bằng bộ xuất tài liệu; cần cài font gốc để hạn chế thay font và lệch trang.",
+          "en": "Exports document layout; install the original fonts to reduce font substitution and pagination changes."
+        }
+      }
     },
     {
       "format": "MD",
@@ -405,9 +537,19 @@
         "TXT",
         "HTML",
         "RTF",
-        "ODT"
+        "ODT",
+        "DOC"
       ],
-      "notices": {}
+      "notices": {
+        "PDF": {
+          "vi": "Giữ bố cục bằng bộ xuất tài liệu; cần cài font gốc để hạn chế thay font và lệch trang.",
+          "en": "Exports document layout; install the original fonts to reduce font substitution and pagination changes."
+        },
+        "TXT": {
+          "vi": "TXT chỉ giữ văn bản; không lưu font, màu, ảnh hoặc định dạng bảng.",
+          "en": "TXT retains plain text only; fonts, colors, images and table formatting are not preserved."
+        }
+      }
     },
     {
       "format": "HTML",
@@ -423,9 +565,35 @@
         "DOCX",
         "TXT",
         "RTF",
-        "ODT"
+        "ODT",
+        "DOC"
       ],
-      "notices": {}
+      "notices": {
+        "DOC": {
+          "vi": "Giữ định dạng trong khả năng của định dạng đích; font thiếu và bố cục phức tạp có thể thay đổi.",
+          "en": "Preserves formatting supported by the target; missing fonts and complex layouts may cause changes."
+        },
+        "DOCX": {
+          "vi": "Giữ định dạng trong khả năng của định dạng đích; font thiếu và bố cục phức tạp có thể thay đổi.",
+          "en": "Preserves formatting supported by the target; missing fonts and complex layouts may cause changes."
+        },
+        "ODT": {
+          "vi": "Giữ định dạng trong khả năng của định dạng đích; font thiếu và bố cục phức tạp có thể thay đổi.",
+          "en": "Preserves formatting supported by the target; missing fonts and complex layouts may cause changes."
+        },
+        "PDF": {
+          "vi": "Giữ bố cục bằng bộ xuất tài liệu; cần cài font gốc để hạn chế thay font và lệch trang.",
+          "en": "Exports document layout; install the original fonts to reduce font substitution and pagination changes."
+        },
+        "RTF": {
+          "vi": "Giữ định dạng trong khả năng của định dạng đích; font thiếu và bố cục phức tạp có thể thay đổi.",
+          "en": "Preserves formatting supported by the target; missing fonts and complex layouts may cause changes."
+        },
+        "TXT": {
+          "vi": "TXT chỉ giữ văn bản; không lưu font, màu, ảnh hoặc định dạng bảng.",
+          "en": "TXT retains plain text only; fonts, colors, images and table formatting are not preserved."
+        }
+      }
     },
     {
       "format": "XLSX",

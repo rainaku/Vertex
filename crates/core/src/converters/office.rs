@@ -9,6 +9,7 @@ use std::time::Duration;
 
 pub struct OfficeConverter;
 const DOCUMENTS: &[Format] = &[
+    Format::Doc,
     Format::Docx,
     Format::Odt,
     Format::Rtf,
@@ -25,6 +26,7 @@ const SHEETS: &[Format] = &[
 ];
 const SLIDES: &[Format] = &[Format::Pptx, Format::Ppt, Format::Odp];
 const SOURCES: &[Format] = &[
+    Format::Doc,
     Format::Docx,
     Format::Odt,
     Format::Rtf,
@@ -62,6 +64,7 @@ fn export_filter(target: Format, source: Format) -> &'static str {
         Format::Pdf if SHEETS.contains(&source) => "pdf:calc_pdf_Export",
         Format::Pdf if SLIDES.contains(&source) => "pdf:impress_pdf_Export",
         Format::Pdf => "pdf:writer_pdf_Export",
+        Format::Doc => "doc:MS Word 97",
         Format::Docx => "docx:Office Open XML Text",
         Format::Odt => "odt:writer8",
         Format::Rtf => "rtf:Rich Text Format",
@@ -120,6 +123,7 @@ impl Converter for OfficeConverter {
     fn targets(&self, from: Format) -> Vec<Format> {
         let mut targets = if DOCUMENTS.contains(&from) {
             vec![
+                Format::Doc,
                 Format::Docx,
                 Format::Odt,
                 Format::Rtf,
@@ -195,6 +199,11 @@ impl Converter for OfficeConverter {
         let source = if input.format == Format::Md {
             let source = source_dir.join("source.html");
             super::data::TextConverter.convert_detected(input, &source, opts, &|_| {}, cancel)?;
+            source
+        } else if input.format == Format::Txt {
+            let source = source_dir.join("source.txt");
+            let text = super::text::read_unicode(input.path, cancel)?;
+            std::fs::write(&source, text).map_err(|e| io_error(&source, e))?;
             source
         } else {
             let source = source_dir.join(format!("source.{}", input.format.extension()));
