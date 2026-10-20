@@ -107,6 +107,7 @@ crash-reports/
 .gemini/
 .claude/
 .copilot/
+.github/context-mode/
 
 # ------------------------------------------------------------------------------
 # 7. OPERATING SYSTEM ARTIFACTS
@@ -125,3 +126,4 @@ $RECYCLE.BIN/
 temp/
 tmp/
 TestResults/
+/.github/context-mode

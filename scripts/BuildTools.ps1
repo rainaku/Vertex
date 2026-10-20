@@ -14,7 +14,10 @@ function Test-VertexTcpPort {
     $client = New-Object Net.Sockets.TcpClient
     try {
         $pending = $client.ConnectAsync('127.0.0.1', $Port)
-        if (-not $pending.Wait($TimeoutMs)) { return $false }
+        if (-not $pending.Wait($TimeoutMs)) {
+            $null = $pending.ContinueWith({ param($t) $null = $t.Exception }, [System.Threading.Tasks.TaskContinuationOptions]::OnlyOnFaulted)
+            return $false
+        }
         return $client.Connected
     } catch { return $false }
     finally { $client.Dispose() }

@@ -1,4 +1,4 @@
-use super::external::{io_error, workspace};
+use super::external::io_error;
 use crate::converter::DetectedInput;
 use crate::{
     detect_format, Availability, CancelToken, Converter, Format, Options, Result, VertexError,
@@ -17,6 +17,7 @@ const FORMATS: &[Format] = &[
     Format::Xml,
 ];
 const MAX_DATA_SIZE: u64 = 64 * 1024 * 1024;
+const MAX_XML_DEPTH: usize = 128;
 
 pub struct DataConverter;
 fn invalid(error: impl std::fmt::Display) -> VertexError {
@@ -85,12 +86,12 @@ impl Converter for DataConverter {
             Format::Json => serde_json::from_str(text).map_err(invalid)?,
             Format::Yaml => {
                 let yaml: serde_yaml_ng::Value = serde_yaml_ng::from_str(text).map_err(invalid)?;
-                validate_yaml(&yaml)?;
+                validate_yaml(&yaml, 0, cancel)?;
                 serde_json::to_value(yaml).map_err(invalid)?
             }
             Format::Toml => {
                 let toml: toml::Value = toml::from_str(text).map_err(invalid)?;
-                validate_toml(&toml)?;
+                validate_toml(&toml, 0, cancel)?;
                 serde_json::to_value(toml).map_err(invalid)?
             }
             Format::Csv | Format::Tsv => read_table(text, input.format, cancel)?,
@@ -120,7 +121,11 @@ impl Converter for DataConverter {
     }
 }
 
-fn validate_yaml(value: &serde_yaml_ng::Value) -> Result<()> {
+fn validate_yaml(value: &serde_yaml_ng::Value, depth: usize, cancel: &CancelToken) -> Result<()> {
+    cancel.check()?;
+    if depth > MAX_XML_DEPTH {
+        return Err(invalid("Data nesting exceeds 128 levels"));
+    }
     use serde_yaml_ng::Value as Y;
     match value {
         Y::Number(number) if number.as_f64().is_some_and(|n| !n.is_finite()) => {
@@ -133,7 +138,7 @@ fn validate_yaml(value: &serde_yaml_ng::Value) -> Result<()> {
         }
         Y::Sequence(items) => {
             for item in items {
-                validate_yaml(item)?;
+                validate_yaml(item, depth + 1, cancel)?;
             }
         }
         Y::Mapping(map) => {
@@ -141,26 +146,30 @@ fn validate_yaml(value: &serde_yaml_ng::Value) -> Result<()> {
                 if !matches!(key, Y::String(_)) {
                     return Err(invalid("Structured-data object keys must be strings"));
                 }
-                validate_yaml(value)?;
+                validate_yaml(value, depth + 1, cancel)?;
             }
         }
         _ => {}
     }
     Ok(())
 }
-fn validate_toml(value: &toml::Value) -> Result<()> {
+fn validate_toml(value: &toml::Value, depth: usize, cancel: &CancelToken) -> Result<()> {
+    cancel.check()?;
+    if depth > MAX_XML_DEPTH {
+        return Err(invalid("Data nesting exceeds 128 levels"));
+    }
     match value {
         toml::Value::Float(number) if !number.is_finite() => {
             return Err(invalid("Non-finite numbers cannot be represented as JSON"))
         }
         toml::Value::Array(items) => {
             for item in items {
-                validate_toml(item)?;
+                validate_toml(item, depth + 1, cancel)?;
             }
         }
         toml::Value::Table(map) => {
             for value in map.values() {
-                validate_toml(value)?;
+                validate_toml(value, depth + 1, cancel)?;
             }
         }
         _ => {}
@@ -259,7 +268,7 @@ fn read_xml(text: &str, cancel: &CancelToken) -> Result<Value> {
                 if stack.is_empty() && !root.is_empty() {
                     return Err(invalid("XML requires exactly one root element"));
                 }
-                if stack.len() >= 128 {
+                if stack.len() >= MAX_XML_DEPTH {
                     return Err(invalid("XML nesting exceeds 128 levels"));
                 }
                 let name = e.name().as_ref().to_owned();
@@ -326,12 +335,13 @@ fn read_xml(text: &str, cancel: &CancelToken) -> Result<Value> {
             }
             Event::CData(e) => {
                 if let Some((_, map)) = stack.last_mut() {
-                    let s = map
+                    let Value::String(s) = map
                         .entry("$text")
-                        .or_insert_with(|| Value::String(String::new()));
-                    if let Value::String(s) = s {
-                        s.push_str(e.as_ref());
-                    }
+                        .or_insert_with(|| Value::String(String::new()))
+                    else {
+                        return Err(invalid("Invalid XML text"));
+                    };
+                    s.push_str(e.as_ref());
                 }
             }
             Event::DocType(_) => {
@@ -341,12 +351,13 @@ fn read_xml(text: &str, cancel: &CancelToken) -> Result<Value> {
                 let reference = format!("&{};", e.as_ref());
                 let decoded = quick_xml::escape::unescape(&reference).map_err(invalid)?;
                 if let Some((_, map)) = stack.last_mut() {
-                    if let Value::String(s) = map
+                    let Value::String(s) = map
                         .entry("$text")
                         .or_insert_with(|| Value::String(String::new()))
-                    {
-                        s.push_str(&decoded);
-                    }
+                    else {
+                        return Err(invalid("Invalid XML text"));
+                    };
+                    s.push_str(&decoded);
                 }
             }
             Event::Eof => break,
@@ -386,7 +397,7 @@ fn write_element(
     cancel: &CancelToken,
 ) -> Result<()> {
     cancel.check()?;
-    if depth > 128 {
+    if depth > MAX_XML_DEPTH {
         return Err(invalid("XML nesting exceeds 128 levels"));
     }
     xml_name(name)?;
@@ -422,15 +433,23 @@ fn write_element(
     writer.write_event(Event::Start(start)).map_err(invalid)?;
     match value {
         Value::Object(map) => {
+            let has_children = map
+                .keys()
+                .any(|key| !key.starts_with('@') && key != "$text");
             for (key, value) in map {
                 if key == "$text" {
-                    writer
-                        .write_event(Event::Text(BytesText::new(xml_text(
-                            value
-                                .as_str()
-                                .ok_or_else(|| invalid("$text must be a string"))?,
-                        )?)))
-                        .map_err(invalid)?;
+                    let text = value
+                        .as_str()
+                        .ok_or_else(|| invalid("$text must be a string"))?;
+                    if has_children {
+                        if !text.trim().is_empty() {
+                            return Err(invalid("Mixed XML text and child elements cannot be represented by this data mapping without changing their order"));
+                        }
+                    } else {
+                        writer
+                            .write_event(Event::Text(BytesText::new(xml_text(text)?)))
+                            .map_err(invalid)?;
+                    }
                 } else if !key.starts_with('@') {
                     write_element(writer, key, value, depth + 1, cancel)?;
                 }
@@ -457,8 +476,10 @@ fn write_xml(value: &Value, cancel: &CancelToken) -> Result<Vec<u8>> {
     if let Value::Object(map) = value {
         if map.len() == 1 && !map.values().next().unwrap().is_array() {
             let (name, value) = map.iter().next().unwrap();
-            write_element(&mut writer, name, value, 0, cancel)?;
-            return Ok(writer.into_inner());
+            if !name.starts_with('@') && name != "$text" {
+                write_element(&mut writer, name, value, 0, cancel)?;
+                return Ok(writer.into_inner());
+            }
         }
     }
     if let Value::Array(items) = value {
@@ -524,7 +545,14 @@ impl Converter for TextConverter {
     ) -> Result<()> {
         cancel.check()?;
         crate::path_utils::ensure_distinct(input.path, output)?;
-        let text = std::fs::read_to_string(input.path).map_err(|e| io_error(input.path, e))?;
+        let file = std::fs::File::open(input.path).map_err(|e| io_error(input.path, e))?;
+        let mut text = String::new();
+        file.take(MAX_DATA_SIZE + 1)
+            .read_to_string(&mut text)
+            .map_err(|e| io_error(input.path, e))?;
+        if text.len() as u64 > MAX_DATA_SIZE {
+            return Err(invalid("Text input is limited to 64 MiB per conversion"));
+        }
         let target = Format::from_path_extension(output);
         let result = if target == Some(Format::Html) {
             let mut body = String::new();
@@ -555,10 +583,10 @@ impl Converter for TextConverter {
         } else {
             return Err(invalid("Unsupported text conversion"));
         };
-        let temp = workspace()?;
-        let path = temp.path().join("text");
-        std::fs::write(&path, result).map_err(|e| io_error(&path, e))?;
-        super::external::copy_output(&path, output, cancel)?;
+        let staged = crate::path_utils::stage_output(output)?;
+        std::fs::write(&staged, result).map_err(|e| io_error(output, e))?;
+        cancel.check()?;
+        crate::path_utils::publish_exact(staged, output)?;
         progress(1.0);
         Ok(())
     }

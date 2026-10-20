@@ -15,7 +15,8 @@ if ($installer.Name -notmatch '^Vertex.*(\.exe|\.msi)$' -and $installer.Name -ne
 
 $parsedVersion = $null
 $normalizedVersion = $Version.TrimStart('v')
-if (-not [Version]::TryParse($normalizedVersion, [ref]$parsedVersion)) {
+$isSemVer = $normalizedVersion -match '\A\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?\z'
+if (-not $isSemVer -and -not ($normalizedVersion -match '\A\d+(\.\d+){1,3}\z' -and [Version]::TryParse($normalizedVersion, [ref]$parsedVersion))) {
     throw "Invalid release version: $Version"
 }
 

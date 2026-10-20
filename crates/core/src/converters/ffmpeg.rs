@@ -99,7 +99,6 @@ fn find_binary(name: &str) -> Option<PathBuf> {
             candidates.push(base.join(&exe));
         }
     }
-    candidates.push(PathBuf::from("bin").join(&exe));
     #[cfg(windows)]
     for base in [
         r"C:\ffmpeg\bin",
@@ -134,6 +133,8 @@ impl Drop for ChildGuard {
 }
 
 fn get_media_duration(binary: &Path, input: &Path, cancel: &CancelToken) -> Option<f64> {
+    use std::io::Seek;
+    let mut log = tempfile::tempfile().ok()?;
     let mut cmd = Command::new(binary);
     cmd.args([
         "-v",
@@ -146,7 +147,7 @@ fn get_media_duration(binary: &Path, input: &Path, cancel: &CancelToken) -> Opti
     ])
     .arg(crate::path_utils::external_path(input))
     .stdin(Stdio::null())
-    .stdout(Stdio::piped())
+    .stdout(log.try_clone().ok()?)
     .stderr(Stdio::null());
     #[cfg(windows)]
     {
@@ -167,14 +168,9 @@ fn get_media_duration(binary: &Path, input: &Path, cancel: &CancelToken) -> Opti
         }
         std::thread::sleep(Duration::from_millis(25));
     }
+    log.rewind().ok()?;
     let mut text = String::new();
-    child
-        .0
-        .stdout
-        .take()?
-        .take(65536)
-        .read_to_string(&mut text)
-        .ok()?;
+    log.take(65536).read_to_string(&mut text).ok()?;
     text.lines()
         .filter_map(|s| s.trim().parse::<f64>().ok())
         .filter(|n| n.is_finite() && *n > 0.0)
@@ -296,7 +292,7 @@ impl Converter for FfmpegConverter {
             Availability::Ok
         } else {
             Availability::Missing(
-                "Cần FFmpeg để xử lý Audio & Video. Cài đặt nhanh qua winget: winget install Gyan.FFmpeg.Essentials".to_string(),
+                "Audio & Video cần FFmpeg trong PATH hoặc thư mục bin của Vertex. / Audio and video conversion requires FFmpeg.".to_string(),
             )
         }
     }
@@ -369,8 +365,29 @@ impl Converter for FfmpegConverter {
             ]);
             append_audio_codec_args(&mut args, target);
         } else if target == Format::Gif {
-            args.extend(["-an".into(), "-vf".into(),
-                format!("fps=15,scale={}:{}:force_original_aspect_ratio=decrease:flags=lanczos,split[s0][s1];[s0]palettegen=stats_mode=single[p];[s1][p]paletteuse=new=1:alpha_threshold={}", opts.max_width.unwrap_or(480), opts.max_height.unwrap_or(480), opts.gif_alpha_threshold)]);
+            let default_cap = if opts.max_width.is_none() && opts.max_height.is_none() {
+                Some(480)
+            } else {
+                None
+            };
+            let width = opts
+                .max_width
+                .or(default_cap)
+                .map(|w| format!("min(iw,{})", w.max(1)))
+                .unwrap_or_else(|| "iw".into());
+            let height = opts
+                .max_height
+                .or(default_cap)
+                .map(|h| format!("min(ih,{})", h.max(1)))
+                .unwrap_or_else(|| "ih".into());
+            args.extend([
+                "-an".into(),
+                "-vf".into(),
+                format!(
+                    "fps=15,scale=w='{width}':h='{height}':force_original_aspect_ratio=decrease:flags=lanczos,split[s0][s1];[s0]palettegen=stats_mode=single[p];[s1][p]paletteuse=new=1:alpha_threshold={}",
+                    opts.gif_alpha_threshold
+                ),
+            ]);
         } else {
             args.extend([
                 "-map".into(),

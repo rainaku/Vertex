@@ -1,9 +1,12 @@
 use super::external::{find_tool, io_error, run_tool, workspace};
 use super::image::PureRustImageConverter;
 use crate::{Availability, CancelToken, Converter, Format, Options, Result, VertexError};
+use std::io::Read;
 use std::path::Path;
 use std::process::Command;
 use std::time::Duration;
+
+const MAX_SVG_SIZE: u64 = 64 * 1024 * 1024;
 
 pub const RASTER_TARGETS: &[Format] = &[
     Format::Png,
@@ -41,7 +44,16 @@ impl Converter for SvgConverter {
         cancel.check()?;
         crate::path_utils::ensure_distinct(input, output)?;
         let opts = opts.normalized();
-        let data = std::fs::read(input).map_err(|e| io_error(input, e))?;
+        let file = std::fs::File::open(input).map_err(|e| io_error(input, e))?;
+        let mut data = Vec::new();
+        file.take(MAX_SVG_SIZE + 1)
+            .read_to_end(&mut data)
+            .map_err(|e| io_error(input, e))?;
+        if data.len() as u64 > MAX_SVG_SIZE {
+            return Err(VertexError::Encoding(
+                "SVG input is limited to 64 MiB per conversion".into(),
+            ));
+        }
         let mut config = resvg::usvg::Options {
             dpi: opts.dpi as f32,
             ..Default::default()
@@ -168,27 +180,30 @@ impl MagickImageConverter {
         find_tool("magick", &["ImageMagick", "/usr/bin", "/opt/homebrew/bin"])
     }
     fn decoder_available(&self) -> bool {
-        type Probe = std::sync::Mutex<Option<(std::path::PathBuf, std::time::Instant, String)>>;
+        type Probe = std::sync::Mutex<Option<(std::time::Instant, String)>>;
         static CACHE: std::sync::OnceLock<Probe> = std::sync::OnceLock::new();
-        let Some(binary) = self.binary() else {
-            return false;
-        };
         let mut cache = CACHE
             .get_or_init(|| std::sync::Mutex::new(None))
             .lock()
             .unwrap_or_else(|p| p.into_inner());
-        if !cache.as_ref().is_some_and(|(path, time, _)| {
-            *path == binary && time.elapsed() < Duration::from_secs(30)
-        }) {
-            let text = run_tool(
-                Command::new(&binary).args(["-list", "format"]),
-                &CancelToken::new(),
-                Duration::from_secs(10),
-            )
-            .unwrap_or_default();
-            *cache = Some((binary, std::time::Instant::now(), text));
+        if !cache
+            .as_ref()
+            .is_some_and(|(time, _)| time.elapsed() < Duration::from_secs(30))
+        {
+            let text = self
+                .binary()
+                .and_then(|binary| {
+                    run_tool(
+                        Command::new(binary).args(["-list", "format"]),
+                        &CancelToken::new(),
+                        Duration::from_secs(10),
+                    )
+                    .ok()
+                })
+                .unwrap_or_default();
+            *cache = Some((std::time::Instant::now(), text));
         }
-        cache.as_ref().is_some_and(|(_, _, text)| {
+        cache.as_ref().is_some_and(|(_, text)| {
             text.lines().any(|line| {
                 let fields: Vec<_> = line.split_whitespace().collect();
                 fields.len() >= 3

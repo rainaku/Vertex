@@ -15,17 +15,17 @@ export function normalizeOptions(value: Partial<Options> | null | undefined): Op
   const src = value ?? {};
   const integer = (n: unknown, min: number, max: number, fallback: number) =>
     typeof n === 'number' && Number.isFinite(n) ? Math.min(max, Math.max(min, Math.round(n))) : fallback;
-  const dimension = (n: unknown) =>
-    typeof n === 'number' && Number.isFinite(n) && n > 0 ? integer(n, limits.max_width.min, limits.max_width.max, 1) : undefined;
+  const dimension = (key: 'max_width' | 'max_height', n: unknown) =>
+    typeof n === 'number' && Number.isFinite(n) && n > 0 ? integer(n, limits[key].min, limits[key].max, 1) : undefined;
   const bounded = (key: keyof typeof limits, n: unknown, fallback: number) => integer(n, limits[key].min, limits[key].max, fallback);
   return {
     ...defaults,
     quality: bounded('quality', src.quality, defaults.quality),
     dpi: bounded('dpi', src.dpi, defaults.dpi),
     strip_metadata: typeof src.strip_metadata === 'boolean' ? src.strip_metadata : defaults.strip_metadata,
-    max_width: dimension(src.max_width),
-    max_height: dimension(src.max_height),
-    output_dir: typeof src.output_dir === 'string' && src.output_dir.trim() ? src.output_dir : undefined,
+    max_width: dimension('max_width', src.max_width),
+    max_height: dimension('max_height', src.max_height),
+    output_dir: typeof src.output_dir === 'string' && src.output_dir.trim() ? src.output_dir.trim() : undefined,
     collision_policy: ['rename_with_suffix', 'fail_if_exists', 'overwrite'].includes(src.collision_policy ?? '')
       ? src.collision_policy!
       : defaults.collision_policy,
@@ -54,10 +54,6 @@ export function loadOptions(): Options {
 
 export function saveOptions(value: Partial<Options>): Options {
   const normalized = normalizeOptions(value);
-  try {
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify(normalized));
-  } catch {
-    // Ignore storage quota or private mode errors
-  }
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify(normalized));
   return normalized;
 }

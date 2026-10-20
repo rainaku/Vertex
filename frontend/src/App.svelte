@@ -48,6 +48,7 @@
 
   let currentFile: FormatInfo | null = null;
   let currentFilePaths: string[] = [];
+  let sourceFormat: string | null = null;
   let sourceFormatLabel: string | null = null;
 
   // Whether wheel is currently visible
@@ -79,8 +80,6 @@
   let options: Options = defaultOptions();
   let settingsVisible = false;
   let optionsPanelRef: OptionsPanel | null = null;
-  let unlistenSettings: (() => void) | null = null;
-  let unlistenUpdateAvailable: (() => void) | null = null;
 
   async function openSettings() {
     if (status === 'converting' || settingsVisible) return;
@@ -105,18 +104,33 @@
     await restoreWheelWindow();
   }
 
-  let unlistenProgress: (() => void) | null = null;
-  let unlistenDragDrop: (() => void) | null = null;
-  let unlistenDragStart: (() => void) | null = null;
-  let unlistenDragEnd: (() => void) | null = null;
-  let unlistenDragCancel: (() => void) | null = null;
-  let unlistenWheelShown: (() => void) | null = null;
-  let unlistenCloseRequested: (() => void) | null = null;
-
   // ─── Helpers ─────────────────────────────────────────────────────────────────
 
+  const OPEN_WHEEL_SIZE = 520 * 0.55;
+
+  function getOpenWheelRect(): Pick<DOMRect, 'left' | 'top' | 'width' | 'height'> {
+    const rect = wheelElement?.getBoundingClientRect();
+    if (wheelVisible && rect && rect.width >= OPEN_WHEEL_SIZE && rect.height >= OPEN_WHEEL_SIZE) {
+      return rect;
+    }
+    const cx = rect && rect.width > 0 ? rect.left + rect.width / 2 : window.innerWidth / 2;
+    const cy = rect && rect.height > 0 ? rect.top + rect.height / 2 : window.innerHeight / 2;
+    return {
+      left: cx - OPEN_WHEEL_SIZE / 2,
+      top: cy - OPEN_WHEEL_SIZE / 2,
+      width: OPEN_WHEEL_SIZE,
+      height: OPEN_WHEEL_SIZE,
+    };
+  }
+
+  function getCommonSourceFormat(files: FormatInfo[]): string | null {
+    if (files.length === 0) return null;
+    const first = files[0].format;
+    return files.every((file) => file.format === first) ? first : null;
+  }
+
   function orderTargets(targets: TargetFormatInfo[], files: FormatInfo[]) {
-    const source = files.length === 1 ? files[0].format : null;
+    const source = getCommonSourceFormat(files);
     return [...targets]
       .sort((a, b) => Number(b.format === source) - Number(a.format === source));
   }
@@ -134,7 +148,7 @@
   $: hasMorePages = allAvailableFormats.length > 8;
   $: totalPages = Math.ceil(allAvailableFormats.length / PETALS_PER_PAGE) || 1;
 
-  let dragDwellTimer: any = null;
+  let dragDwellTimer: ReturnType<typeof setTimeout> | null = null;
   let dragDwellCooldown = false;
 
   function triggerDragDwell() {
@@ -231,6 +245,9 @@
     const revision = ++fileRevision;
     currentFilePaths = [];
     currentFile = null;
+    sourceFormat = null;
+    sourceFormatLabel = null;
+    activeIndex = -1;
     allAvailableFormats = [];
     formats = [];
     conversionError = '';
@@ -246,13 +263,17 @@
       status = 'idle';
       convertingIndex = -1;
       currentFile = batch.files[0] ?? null;
-      sourceFormatLabel = paths.length === 1 ? currentFile?.label ?? null : `BATCH (${paths.length})`;
+      sourceFormat = getCommonSourceFormat(batch.files);
+      sourceFormatLabel = batch.files.length === 1 ? currentFile?.label ?? null : null;
       allAvailableFormats = orderTargets(batch.common_targets, batch.files);
       page = 0;
       updatePagedFormats();
       return true;
     } catch (error) {
       if (destroyed || revision !== fileRevision) return false;
+      sourceFormat = null;
+      sourceFormatLabel = null;
+      activeIndex = -1;
       conversionError = String(error);
       status = 'error';
       return false;
@@ -342,7 +363,7 @@
     window.addEventListener('keydown', handleKeyDown);
 
     // Subscribe to conversion progress
-    unlistenProgress = await scopedProgress((payload) => {
+    await scopedProgress((payload) => {
       if (payload.job_id !== activeJobId) return;
       if (stopping) {
         // Also covers a stop click before the conversion command registered
@@ -362,16 +383,16 @@
         const listen = <T,>(name: string, callback: (event: { payload: T }) => void) =>
           listenEvent<T>(name, callback).then(keepListener);
         const webview = getCurrentWebview();
-        unlistenSettings = await listen('open_advanced_settings', () => { void openSettings(); });
+        await listen('open_advanced_settings', () => { void openSettings(); });
 
-        unlistenWheelShown = await listen<{ generation: number; focus: boolean }>('wheel_shown', (event) => {
+        await listen<{ generation: number; focus: boolean }>('wheel_shown', (event) => {
           nativeGeneration = event.payload.generation;
           dragRevision++;
           dragCancelled = false;
           cancelClose();
           if (event.payload.focus && !settingsVisible) void showWheel();
         });
-        unlistenCloseRequested = await listen('wheel_close_requested', () => {
+        await listen('wheel_close_requested', () => {
           if (settingsVisible) {
             if (optionsPanelRef) {
               optionsPanelRef.requestClose();
@@ -384,7 +405,7 @@
         });
 
         // 1. Listen for global Shift+Drag events from Rust background thread
-        unlistenDragStart = await listen('shift_drag_start', () => {
+        await listen('shift_drag_start', () => {
           if (settingsVisible) return;
           dragRevision++;
           fileRevision++;
@@ -396,7 +417,7 @@
           isDragging = true;
         });
 
-        unlistenDragEnd = await listen('shift_drag_end', () => {
+        await listen('shift_drag_end', () => {
           if (settingsVisible) return;
           dragReleased = true;
           // Mouse-up is not an OLE Drop. Keep the target alive until Drop/Leave,
@@ -406,7 +427,7 @@
           }
         });
 
-        unlistenDragCancel = await listen('drag_cancelled', () => {
+        await listen('drag_cancelled', () => {
           if (settingsVisible) return;
           if (status !== 'converting') {
             hideWheel();
@@ -414,7 +435,7 @@
         });
 
         // 2. Tauri webview drag-and-drop events (triggered when files hover over webview)
-        unlistenDragDrop = await webview.onDragDropEvent(async (event) => {
+        await webview.onDragDropEvent(async (event) => {
           if (settingsVisible || dragCancelled || destroyed) return;
           if (status === 'converting' || status === 'done') {
             clearDragDwell();
@@ -445,7 +466,7 @@
             // Convert physical coordinates to CSS logical coordinates
             const cssX = pos.x / dpr;
             const cssY = pos.y / dpr;
-            const hit = hitTestClient(cssX, cssY, wheelElement.getBoundingClientRect());
+            const hit = hitTestClient(cssX, cssY, getOpenWheelRect());
             activeIndex = hit.type === 'petal' ? hit.index : -1;
 
             if (hit.type === 'petal' && hit.index === 7 && hasMorePages) {
@@ -460,7 +481,7 @@
             const paths = event.payload.paths;
             const pos = event.payload.position;
             // Snapshot geometry before any await/transition can move the wheel.
-            const hit = hitTestClient(pos.x / dpr, pos.y / dpr, wheelElement.getBoundingClientRect());
+            const hit = hitTestClient(pos.x / dpr, pos.y / dpr, getOpenWheelRect());
             cancelClose();
             dragInsideWebview = false;
             isDragging = false;
@@ -498,7 +519,7 @@
             if (dragReleased && !dropAccepted) await hideWheel();
           }
         }).then(keepListener);
-        unlistenUpdateAvailable = await listen('update_available', () => {
+        await listen('update_available', () => {
           void checkForUpdates(false);
         });
       } catch (err) {
@@ -524,17 +545,8 @@
     clearTimeout(dragCooldownTimer);
     if (activeJobId) void cancelJob(activeJobId);
     void setConvertingState(false);
-    if (unlistenSettings) unlistenSettings();
     cancelClose();
     window.removeEventListener('keydown', handleKeyDown);
-    if (unlistenProgress) unlistenProgress();
-    if (unlistenDragDrop) unlistenDragDrop();
-    if (unlistenDragStart) unlistenDragStart();
-    if (unlistenDragEnd) unlistenDragEnd();
-    if (unlistenDragCancel) unlistenDragCancel();
-    if (unlistenWheelShown) unlistenWheelShown();
-    if (unlistenCloseRequested) unlistenCloseRequested();
-    if (unlistenUpdateAvailable) unlistenUpdateAvailable();
   });
 </script>
 
@@ -552,7 +564,8 @@
       {convertingIndex}
       {progress}
       {status}
-      sourceFormat={currentFilePaths.length > 1 ? `${$t("Tệp")} (${currentFilePaths.length})` : sourceFormatLabel}
+      {sourceFormat}
+      centerLabel={currentFilePaths.length > 1 ? `${$t("Tệp")} (${currentFilePaths.length})` : sourceFormatLabel}
       {hasMorePages}
       {page}
       {totalPages}

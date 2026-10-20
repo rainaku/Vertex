@@ -1,11 +1,34 @@
 //! Shared lifecycle for optional local conversion tools. No shell is involved.
 use crate::{CancelToken, Result, VertexError};
+use std::collections::HashMap;
 use std::io::{Read, Seek};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
+use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
+type ToolCache = Mutex<HashMap<String, (Instant, Option<PathBuf>)>>;
+static TOOL_CACHE: OnceLock<ToolCache> = OnceLock::new();
+
 pub fn find_tool(name: &str, locations: &[&str]) -> Option<PathBuf> {
+    let key = format!("{name}\0{}", locations.join("\0"));
+    let mut cache = TOOL_CACHE
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+        .unwrap_or_else(|p| p.into_inner());
+    if let Some((checked, path)) = cache.get(&key) {
+        if path.as_ref().is_some_and(|p| p.is_file())
+            || (path.is_none() && checked.elapsed() < Duration::from_secs(2))
+        {
+            return path.clone();
+        }
+    }
+    let found = find_tool_uncached(name, locations);
+    cache.insert(key, (Instant::now(), found.clone()));
+    found
+}
+
+fn find_tool_uncached(name: &str, locations: &[&str]) -> Option<PathBuf> {
     let exe = if cfg!(windows) && Path::new(name).extension().is_none() {
         format!("{name}.exe")
     } else {

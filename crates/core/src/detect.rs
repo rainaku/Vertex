@@ -25,8 +25,10 @@ pub fn detect_format<P: AsRef<Path>>(path: P) -> Result<Format> {
     let count = read_prefix(&mut file, &mut header).map_err(io)?;
     let mut bytes = &header[..count];
     let mut payload = [0; 8192];
+    let mut had_id3 = false;
     if bytes.starts_with(b"ID3") && bytes.len() >= 10 && bytes[6..10].iter().all(|b| b & 0x80 == 0)
     {
+        had_id3 = true;
         let size = bytes[6..10]
             .iter()
             .fold(0u64, |n, b| (n << 7) | u64::from(*b));
@@ -65,13 +67,19 @@ pub fn detect_format<P: AsRef<Path>>(path: P) -> Result<Format> {
         return Ok(Format::Zip);
     }
     if bytes.starts_with(b"\x1aE\xdf\xa3") {
-        for (i, tag) in bytes.windows(3).enumerate() {
-            if tag[..2] == [0x42, 0x82] && tag[2] & 0x80 != 0 {
-                let len = usize::from(tag[2] & 0x7f);
-                match bytes.get(i + 3..i + 3 + len) {
-                    Some(b"matroska") => return Ok(Format::Mkv),
-                    Some(b"webm") => return Ok(Format::Webm),
-                    _ => {}
+        for (i, tag) in bytes.windows(2).enumerate() {
+            if tag == [0x42, 0x82] {
+                if let Some((width, len)) = bytes.get(i + 2..).and_then(ebml_vint) {
+                    let start = i + 2 + width;
+                    if let Some(raw) = start.checked_add(len).and_then(|end| bytes.get(start..end))
+                    {
+                        let doctype = raw.split(|&b| b == 0).next().unwrap_or(raw);
+                        match doctype {
+                            b"matroska" => return Ok(Format::Mkv),
+                            b"webm" => return Ok(Format::Webm),
+                            _ => {}
+                        }
+                    }
                 }
             }
         }
@@ -106,13 +114,19 @@ pub fn detect_format<P: AsRef<Path>>(path: P) -> Result<Format> {
         if brand.starts_with(b"3g") {
             return Ok(Format::ThreeGp);
         }
-        if brand == b"M4A " || brand == b"M4B " {
+        if matches!(brand, b"M4A " | b"M4B " | b"F4A ") {
             return Ok(Format::M4a);
         }
-        if matches!(extension, Some(Format::M4a | Format::ThreeGp))
-            && matches!(brand, b"isom" | b"mp41" | b"mp42")
+        if extension == Some(Format::M4a)
+            && matches!(
+                brand,
+                b"isom" | b"mp41" | b"mp42" | b"iso2" | b"dash" | b"iso5" | b"F4A "
+            )
         {
-            return Ok(extension.unwrap());
+            return Ok(Format::M4a);
+        }
+        if extension == Some(Format::ThreeGp) && matches!(brand, b"isom" | b"mp41" | b"mp42") {
+            return Ok(Format::ThreeGp);
         }
     }
     let text = match std::str::from_utf8(bytes) {
@@ -127,7 +141,11 @@ pub fn detect_format<P: AsRef<Path>>(path: P) -> Result<Format> {
             loop {
                 match reader.read_event() {
                     Ok(quick_xml::events::Event::Start(e) | quick_xml::events::Event::Empty(e)) => {
-                        if e.local_name().as_ref() == "svg" {
+                        if e.local_name()
+                            .as_ref()
+                            .as_bytes()
+                            .eq_ignore_ascii_case(b"svg")
+                        {
                             return Ok(Format::Svg);
                         }
                         if e.local_name().as_ref().eq_ignore_ascii_case("html") {
@@ -135,11 +153,31 @@ pub fn detect_format<P: AsRef<Path>>(path: P) -> Result<Format> {
                         }
                         break;
                     }
+                    Ok(quick_xml::events::Event::DocType(e)) => {
+                        let doctype = e.as_ref().trim_start();
+                        if doctype
+                            .get(..4)
+                            .is_some_and(|s| s.eq_ignore_ascii_case("html"))
+                            && doctype
+                                .as_bytes()
+                                .get(4)
+                                .is_none_or(|b| b.is_ascii_whitespace())
+                        {
+                            return Ok(Format::Html);
+                        }
+                    }
                     Ok(quick_xml::events::Event::Eof) | Err(_) => break,
                     _ => {}
                 }
             }
-            if text
+            let mut rest = text;
+            while let Some(after_open) = rest.strip_prefix("<!--") {
+                let Some(end) = after_open.find("-->") else {
+                    break;
+                };
+                rest = after_open[end + 3..].trim_start();
+            }
+            if rest
                 .get(..14)
                 .is_some_and(|s| s.eq_ignore_ascii_case("<!doctype html"))
             {
@@ -151,7 +189,9 @@ pub fn detect_format<P: AsRef<Path>>(path: P) -> Result<Format> {
             if bytes.starts_with(b"\xef\xbb\xbf") {
                 file.seek(SeekFrom::Start(3)).map_err(io)?;
             }
-            let mut deserializer = serde_json::Deserializer::from_reader(BufReader::new(&mut file));
+            let mut deserializer = serde_json::Deserializer::from_reader(BufReader::new(
+                (&mut file).take(64 * 1024 * 1024),
+            ));
             if serde::de::IgnoredAny::deserialize(&mut deserializer).is_ok()
                 && deserializer.end().is_ok()
             {
@@ -170,7 +210,29 @@ pub fn detect_format<P: AsRef<Path>>(path: P) -> Result<Format> {
             });
         }
     }
+    if had_id3 {
+        return Ok(Format::Mp3);
+    }
     extension.ok_or_else(|| VertexError::UnrecognizedFormat(path.to_path_buf()))
+}
+
+fn ebml_vint(bytes: &[u8]) -> Option<(usize, usize)> {
+    let first = *bytes.first()?;
+    if first == 0 {
+        return None;
+    }
+    let width = first.leading_zeros() as usize + 1;
+    let slice = bytes.get(..width)?;
+    let mask = if width == 8 {
+        0
+    } else {
+        (1u8 << (8 - width)) - 1
+    };
+    let mut value = usize::from(first & mask);
+    for &b in &slice[1..] {
+        value = (value << 8) | usize::from(b);
+    }
+    Some((width, value))
 }
 
 fn read_prefix(reader: &mut impl Read, buffer: &mut [u8]) -> std::io::Result<usize> {

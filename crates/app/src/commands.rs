@@ -57,14 +57,30 @@ pub struct LanguageMenu {
     pub quit: tauri::menu::MenuItem<tauri::Wry>,
 }
 
+static APP_LANGUAGE: Mutex<&'static str> = Mutex::new("vi");
+
+pub fn current_language() -> &'static str {
+    *APP_LANGUAGE.lock().unwrap_or_else(|p| p.into_inner())
+}
+
 #[tauri::command]
 pub fn set_app_language(
     language: String,
     menu: tauri::State<'_, LanguageMenu>,
 ) -> Result<(), String> {
-    let (toggle, settings, quit) = match language.as_str() {
-        "vi" => ("Hiện / ẩn Vertex", "Cài đặt nâng cao…", "Thoát Vertex"),
-        "en" => ("Show / hide Vertex", "Advanced settings…", "Quit Vertex"),
+    let (lang, toggle, settings, quit) = match language.as_str() {
+        "vi" => (
+            "vi",
+            "Hiện / ẩn Vertex",
+            "Cài đặt nâng cao…",
+            "Thoát Vertex",
+        ),
+        "en" => (
+            "en",
+            "Show / hide Vertex",
+            "Advanced settings…",
+            "Quit Vertex",
+        ),
         _ => return Err("Unsupported language".into()),
     };
     menu.toggle.set_text(toggle).map_err(|e| e.to_string())?;
@@ -72,6 +88,7 @@ pub fn set_app_language(
         .set_text(settings)
         .map_err(|e| e.to_string())?;
     menu.quit.set_text(quit).map_err(|e| e.to_string())?;
+    *APP_LANGUAGE.lock().unwrap_or_else(|p| p.into_inner()) = lang;
     Ok(())
 }
 
@@ -271,6 +288,14 @@ pub async fn convert_file(
             permit = &mut acquire => break permit.map_err(|e| e.to_string())?,
             _ = tokio::time::sleep(std::time::Duration::from_millis(50)) => {
                 if cancel.is_cancelled() {
+                    let _ = app.emit(
+                        "convert_progress",
+                        ProgressPayload {
+                            job_id: &job_id,
+                            progress: 0.0,
+                            status: "cancelled",
+                        },
+                    );
                     return Ok(ConvertResult { cancelled: true, success: false, output_path: String::new(), target_format, error: None });
                 }
             }
@@ -363,30 +388,8 @@ pub fn reveal_in_explorer(path: String) -> Result<(), String> {
     let p = vertex_core::path_utils::ipc_path(&path)?;
     let safe_path = vertex_core::security::SafeLauncher::sanitize_explorer_path(&p)?;
 
-    #[cfg(target_os = "windows")]
-    {
-        tauri_plugin_opener::reveal_item_in_dir(&safe_path).map_err(|e| e.to_string())?;
-    }
-
-    #[cfg(target_os = "macos")]
-    {
-        let _ = std::process::Command::new("open")
-            .arg("-R")
-            .arg(&safe_path)
-            .spawn()
-            .map_err(|e| e.to_string())?;
-    }
-
-    #[cfg(target_os = "linux")]
-    {
-        let parent = safe_path.parent().unwrap_or(&safe_path);
-        let _ = std::process::Command::new("xdg-open")
-            .arg(parent)
-            .spawn()
-            .map_err(|e| e.to_string())?;
-    }
-
-    Ok(())
+    tauri_plugin_opener::reveal_item_in_dir(&safe_path)
+        .map_err(|e| format!("Failed to reveal file: {e}"))
 }
 
 // Native input/visibility changes and their generation checks must execute in
@@ -458,12 +461,6 @@ pub async fn set_window_passthrough(app: AppHandle, passthrough: bool) -> Result
     .await
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CursorPos {
-    pub x: i32,
-    pub y: i32,
-}
-
 /// Center the main window on the screen
 #[tauri::command]
 pub fn center_window(app: AppHandle) -> Result<(), String> {
@@ -477,7 +474,6 @@ pub fn center_window(app: AppHandle) -> Result<(), String> {
 #[tauri::command]
 pub async fn prepare_settings_window(app: AppHandle) -> Result<(), String> {
     on_main_window(app, |win| {
-        crate::drag_detector::set_settings_open(true);
         crate::wheel_window::invalidate_close();
         let monitor = win.current_monitor().map_err(|e| e.to_string())?;
         let (width, height) = monitor
@@ -491,19 +487,22 @@ pub async fn prepare_settings_window(app: AppHandle) -> Result<(), String> {
             .unwrap_or((1080.0, 780.0));
         win.set_size(tauri::LogicalSize::new(width, height))
             .map_err(|e| e.to_string())?;
-        crate::wheel_window::show(&win, None, true)
+        crate::wheel_window::show(&win, None, true)?;
+        crate::drag_detector::set_settings_open(true);
+        Ok(())
     })
     .await
 }
 
 #[tauri::command]
 pub async fn restore_wheel_window(app: AppHandle) -> Result<(), String> {
+    crate::drag_detector::set_settings_open(false);
     on_main_window(app, |win| {
+        crate::drag_detector::set_settings_open(false);
         crate::wheel_window::invalidate_close();
         crate::wheel_window::hide(&win)?;
         win.set_size(tauri::LogicalSize::new(480.0, 480.0))
             .map_err(|e| e.to_string())?;
-        crate::drag_detector::set_settings_open(false);
         Ok(())
     })
     .await

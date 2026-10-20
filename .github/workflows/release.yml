@@ -4,26 +4,46 @@ name: Release Installer
   workflow_run:
     workflows: [CI]
     types: [completed]
+  push:
+    tags: ['v*']
 
 permissions:
   contents: read
 
 concurrency:
-  group: release-${{ github.event.workflow_run.head_branch }}
+  group: release-${{ github.event.workflow_run.head_branch || github.ref_name }}
   cancel-in-progress: true
 
 jobs:
   build-installer:
     if: >-
-      github.event.workflow_run.event == 'push' &&
-      github.event.workflow_run.conclusion == 'success' &&
-      (github.event.workflow_run.head_branch == 'main' || startsWith(github.event.workflow_run.head_branch, 'v'))
+      (
+        github.event_name == 'push' &&
+        startsWith(github.ref, 'refs/tags/v')
+      ) || (
+        github.event_name == 'workflow_run' &&
+        github.event.workflow_run.event == 'push' &&
+        github.event.workflow_run.conclusion == 'success' &&
+        (
+          github.event.workflow_run.head_branch == 'main' ||
+          startsWith(github.event.workflow_run.head_branch, 'v0.') ||
+          startsWith(github.event.workflow_run.head_branch, 'v1.') ||
+          startsWith(github.event.workflow_run.head_branch, 'v2.') ||
+          startsWith(github.event.workflow_run.head_branch, 'v3.') ||
+          startsWith(github.event.workflow_run.head_branch, 'v4.') ||
+          startsWith(github.event.workflow_run.head_branch, 'v5.') ||
+          startsWith(github.event.workflow_run.head_branch, 'v6.') ||
+          startsWith(github.event.workflow_run.head_branch, 'v7.') ||
+          startsWith(github.event.workflow_run.head_branch, 'v8.') ||
+          startsWith(github.event.workflow_run.head_branch, 'v9.')
+        )
+      )
     runs-on: windows-latest
     steps:
       # actions/checkout@v4.2.2 (pinned commit SHA)
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       # dtolnay/rust-toolchain@stable
       - uses: dtolnay/rust-toolchain@stable
@@ -37,7 +57,14 @@ jobs:
 
       - name: Build Installer (Setup EXE)
         shell: pwsh
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          RELEASE_BRANCH: ${{ github.event.workflow_run.head_branch || github.ref_name }}
         run: |
+          if ($env:RELEASE_BRANCH -ne 'main' -and $env:RELEASE_BRANCH -notmatch '^v[0-9]+\.[0-9]+\.[0-9]+') {
+            throw "Refusing to build release for unsupported branch/tag: $($env:RELEASE_BRANCH)"
+          }
           ./b.ps1 -Clean
 
       - name: Prepare Artifacts & Checksums
@@ -51,9 +78,6 @@ jobs:
           $hash = (Get-FileHash -Algorithm SHA256 $setupExe.FullName).Hash.ToLowerInvariant()
           Set-Content -Path "$($setupExe.FullName).sha256" -Value "$hash  $($setupExe.Name)`n" -NoNewline
 
-          "name=$($setupExe.Name)" >> $env:GITHUB_OUTPUT
-          "path=$($setupExe.FullName)" >> $env:GITHUB_OUTPUT
-
       # actions/upload-artifact@v4.6.2 (pinned commit SHA)
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
@@ -61,6 +85,8 @@ jobs:
           path: |
             target/release/bundle/nsis/*.exe
             target/release/bundle/nsis/*.sha256
+            target/release/bundle/nsis/*.sig
+            release/latest.json
           if-no-files-found: error
 
   sign-updates:
@@ -72,7 +98,7 @@ jobs:
       # Isolated signing job inside protected update-signing environment
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
           persist-credentials: false
 
       # actions/download-artifact@v4.3.0 (pinned commit SHA)
@@ -85,11 +111,17 @@ jobs:
         shell: pwsh
         env:
           VERTEX_UPDATE_SIGNING_KEY_PEM: ${{ secrets.VERTEX_UPDATE_SIGNING_KEY_PEM }}
-          RELEASE_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          RELEASE_BRANCH: ${{ github.event.workflow_run.head_branch || github.ref_name }}
         run: |
+          $signedRoot = (Resolve-Path signed-assets).Path
+          Get-ChildItem -Path $signedRoot -File -Recurse | Where-Object { $_.DirectoryName -ne $signedRoot } | ForEach-Object {
+            Move-Item -LiteralPath $_.FullName -Destination (Join-Path $signedRoot $_.Name) -Force
+          }
+          Get-ChildItem -Path $signedRoot -Directory | Remove-Item -Recurse -Force
+
           $tauriConf = Get-Content "crates/app/tauri.conf.json" -Raw | ConvertFrom-Json
           $version = [string]$tauriConf.version
-          if ($env:RELEASE_BRANCH.StartsWith('v') -and $env:RELEASE_BRANCH.Substring(1) -ne $version) {
+          if ($env:RELEASE_BRANCH -match '^v[0-9]+\.[0-9]+\.[0-9]+' -and $env:RELEASE_BRANCH.Substring(1) -ne $version) {
             throw "Release tag/branch version ($($env:RELEASE_BRANCH)) must match tauri.conf.json version ($version)."
           }
 
@@ -121,21 +153,21 @@ jobs:
       - name: Publish Release
         run: |
           cat release-assets/*.sha256 > release-assets/checksums.txt || true
-          if [ "${{ startsWith(github.event.workflow_run.head_branch, 'v') }}" = "true" ]; then
-            printf "Release %s from commit \`%s\`.\n\n- \`Vertex\` Windows Setup Installer (NSIS)\n- Signed with ECDSA P-256 / SHA-256 for integrity verification.\n- SHA256 checksums and signed update manifests are attached.\n" "${{ github.event.workflow_run.head_branch }}" "${{ github.event.workflow_run.head_sha }}" > release-notes.md
-            gh release create "${{ github.event.workflow_run.head_branch }}" release-assets/* \
-              --title "Vertex ${{ github.event.workflow_run.head_branch }}" \
-              --target "${{ github.event.workflow_run.head_sha }}" \
+          if [[ "$RELEASE_BRANCH" =~ ^v[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+            printf "Release %s from commit \`%s\`.\n\n- \`Vertex\` Windows Setup Installer (NSIS)\n- Signed with ECDSA P-256 / SHA-256 for integrity verification.\n- SHA256 checksums and signed update manifests are attached.\n" "$RELEASE_BRANCH" "$HEAD_SHA" > release-notes.md
+            gh release create "$RELEASE_BRANCH" release-assets/* \
+              --title "Vertex $RELEASE_BRANCH" \
+              --target "$HEAD_SHA" \
               --latest \
               --notes-file release-notes.md
           else
             gh release delete nightly --cleanup-tag --yes || true
-            gh api -X DELETE repos/${{ github.repository }}/git/refs/tags/nightly || true
+            gh api -X DELETE "repos/$GH_REPO/git/refs/tags/nightly" || true
             sleep 2
-            printf "Automated build from commit \`%s\` on branch \`%s\`.\n\n- \`Vertex\` Windows Setup Installer (NSIS)\n- Signed with ECDSA P-256 / SHA-256 for integrity verification.\n- SHA256 checksums are attached for verification.\n" "${{ github.event.workflow_run.head_sha }}" "${{ github.event.workflow_run.head_branch }}" > release-notes.md
+            printf "Automated build from commit \`%s\` on branch \`%s\`.\n\n- \`Vertex\` Windows Setup Installer (NSIS)\n- Signed with ECDSA P-256 / SHA-256 for integrity verification.\n- SHA256 checksums are attached for verification.\n" "$HEAD_SHA" "$RELEASE_BRANCH" > release-notes.md
             gh release create nightly release-assets/* \
               --title "Nightly build (latest main)" \
-              --target "${{ github.event.workflow_run.head_sha }}" \
+              --target "$HEAD_SHA" \
               --prerelease \
               --notes-file release-notes.md
           fi
@@ -143,3 +175,5 @@ jobs:
           GH_REPO: ${{ github.repository }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_BRANCH: ${{ github.event.workflow_run.head_branch || github.ref_name }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}

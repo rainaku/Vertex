@@ -4,7 +4,7 @@ use crate::{
     detect_format, Availability, CancelToken, Converter, Format, Options, Result, VertexError,
 };
 use flate2::{read::MultiGzDecoder, write::GzEncoder, Compression};
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Write};
 use std::path::{Component, Path, PathBuf};
@@ -69,7 +69,7 @@ impl Converter for ArchiveConverter {
         let mut entries = Entries {
             root: temp.path(),
             paths: Vec::new(),
-            names: HashSet::new(),
+            names: HashMap::new(),
             bytes: 0,
             cancel,
         };
@@ -220,7 +220,7 @@ impl Converter for ArchiveConverter {
 struct Entries<'a> {
     root: &'a Path,
     paths: Vec<(String, PathBuf, bool)>,
-    names: HashSet<String>,
+    names: HashMap<String, bool>,
     bytes: u64,
     cancel: &'a CancelToken,
 }
@@ -230,10 +230,17 @@ impl Entries<'_> {
         if self.paths.len() >= MAX_ENTRIES {
             return Err(invalid("Archive exceeds 100,000 entries"));
         }
-        let name = safe_name(raw)?;
-        if !self.names.insert(name.to_lowercase()) {
+        let Some(name) = safe_name(raw)? else {
+            return Ok(());
+        };
+        let key = name.to_lowercase();
+        if let Some(&existing_dir) = self.names.get(&key) {
+            if existing_dir && directory {
+                return Ok(());
+            }
             return Err(invalid(format!("Duplicate archive path: {name}")));
         }
+        self.names.insert(key, directory);
         let path = self.root.join(&name);
         if directory {
             std::fs::create_dir_all(&path).map_err(invalid)?;
@@ -253,17 +260,24 @@ impl Entries<'_> {
     }
 }
 
-fn safe_name(raw: &str) -> Result<String> {
+fn safe_name(raw: &str) -> Result<Option<String>> {
     let name = raw.replace('\\', "/");
     let path = Path::new(&name);
     if name.starts_with('/')
         || path
             .components()
-            .any(|c| !matches!(c, Component::Normal(_)))
+            .any(|c| !matches!(c, Component::Normal(_) | Component::CurDir))
     {
         return Err(invalid(format!("Unsafe archive path: {raw}")));
     }
-    let parts: Vec<_> = name.trim_end_matches('/').split('/').collect();
+    let raw_parts: Vec<_> = name.trim_end_matches('/').split('/').collect();
+    if raw_parts.iter().any(|part| part.is_empty()) {
+        return Err(invalid(format!("Unsafe archive path: {raw}")));
+    }
+    let parts: Vec<_> = raw_parts.into_iter().filter(|&part| part != ".").collect();
+    if parts.is_empty() {
+        return Ok(None);
+    }
     for part in &parts {
         let base = part.split('.').next().unwrap_or("").to_ascii_uppercase();
         let device = matches!(
@@ -277,8 +291,7 @@ fn safe_name(raw: &str) -> Result<String> {
                 )
             })
         });
-        if part.is_empty()
-            || part.ends_with(['.', ' '])
+        if part.ends_with(['.', ' '])
             || part
                 .chars()
                 .any(|c| c.is_control() || "<>:\"|?*".contains(c))
@@ -287,7 +300,7 @@ fn safe_name(raw: &str) -> Result<String> {
             return Err(invalid(format!("Unsafe archive path: {raw}")));
         }
     }
-    Ok(parts.join("/"))
+    Ok(Some(parts.join("/")))
 }
 
 fn copy_checked(

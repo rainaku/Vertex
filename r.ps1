@@ -11,6 +11,7 @@ $FrontendDir = Join-Path $WorkspaceRoot 'frontend'
 . (Join-Path $WorkspaceRoot 'scripts\BuildTools.ps1')
 
 $viteProcess = $null
+$process = $null
 $vertexExitCode = 0
 Push-Location $WorkspaceRoot
 try {
@@ -28,11 +29,13 @@ try {
         cargo test --workspace --locked
         $vertexExitCode = $LASTEXITCODE
     } else {
-        Push-Location $FrontendDir
-        try {
-            npm run build
-            if ($LASTEXITCODE -ne 0) { throw 'Frontend build failed' }
-        } finally { Pop-Location }
+        if ($Release -or $BuildOnly) {
+            Push-Location $FrontendDir
+            try {
+                npm run build
+                if ($LASTEXITCODE -ne 0) { throw 'Frontend build failed' }
+            } finally { Pop-Location }
+        }
         if ($Release) {
             cargo build --release -p vertex-app --locked --features tauri/custom-protocol
             if ($LASTEXITCODE -ne 0) { throw 'Release build failed' }
@@ -65,6 +68,7 @@ try {
     Write-Error $_ -ErrorAction Continue
     $vertexExitCode = 1
 } finally {
+    Stop-VertexProcessTree -Process $process
     Stop-VertexProcessTree -Process $viteProcess
     Pop-Location
 }

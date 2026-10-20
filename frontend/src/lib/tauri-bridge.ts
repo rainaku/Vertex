@@ -149,6 +149,7 @@ export async function pickFile(): Promise<string | null> {
         const file = input.files?.[0];
         resolve(file ? file.name : null);
       };
+      input.oncancel = () => resolve(null);
       input.click();
     });
   }

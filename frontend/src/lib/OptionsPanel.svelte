@@ -2,9 +2,9 @@
   import contract from "./conversion-contract.json";
   const limits = contract.limits;
   import { onMount, onDestroy } from 'svelte';
-  import { t, language, setLanguage } from './i18n';
+  import { t, language, setLanguage, type Language } from './i18n';
   import type { Options } from './types';
-  import { defaultOptions, normalizeOptions, SETTINGS_KEY } from './settings';
+  import { defaultOptions, normalizeOptions, saveOptions } from './settings';
   import { isTauri } from './tauri-bridge';
   import { updateStore, checkForUpdates, installUpdate, openReleasePage } from './updater';
   import ElasticSlider from './ElasticSlider.svelte';
@@ -164,9 +164,9 @@
   }
 
   function persistDraft(): boolean {
-    const value = normalizeOptions(draft);
+    const normalized = normalizeOptions(draft);
     try {
-      localStorage.setItem(SETTINGS_KEY, JSON.stringify(value));
+      const value = saveOptions(normalized);
       onSave(value);
       draft = value;
       error = '';
@@ -174,6 +174,15 @@
     } catch {
       error = $t('Không thể lưu cài đặt trên thiết bị này.');
       return false;
+    }
+  }
+
+  async function handleLanguageChange(lang: Language) {
+    error = '';
+    try {
+      await setLanguage(lang);
+    } catch {
+      error = $t('Không thể đổi ngôn ngữ. Hãy thử lại.');
     }
   }
 
@@ -371,8 +380,8 @@
                   <span class="row-desc">{$language === 'vi' ? 'Thay đổi ngôn ngữ hiển thị trên toàn bộ giao diện.' : 'Select language for the user interface.'}</span>
                 </div>
                 <div class="seg">
-                  <button type="button" class="seg-btn" class:seg-on={$language === 'vi'} on:click={() => setLanguage('vi')}>Tiếng Việt</button>
-                  <button type="button" class="seg-btn" class:seg-on={$language === 'en'} on:click={() => setLanguage('en')}>English</button>
+                  <button type="button" class="seg-btn" class:seg-on={$language === 'vi'} on:click={() => handleLanguageChange('vi')}>Tiếng Việt</button>
+                  <button type="button" class="seg-btn" class:seg-on={$language === 'en'} on:click={() => handleLanguageChange('en')}>English</button>
                 </div>
               </div>
 {/snippet}
@@ -401,7 +410,7 @@
                   <span class="row-title">{$language === 'vi' ? 'Chất lượng JPG / AVIF' : 'JPG / AVIF quality'}</span>
                   <span class="row-desc">{$language === 'vi' ? 'WEBP luôn lossless. PNG và TIFF bảo toàn nguyên gốc.' : 'WEBP is lossless. PNG and TIFF remain unaffected.'}</span>
                 </div>
-                <ElasticSlider bind:value={draft.quality} min={limits.quality.min} max={limits.quality.max} step={1} unit="%"/>
+                <ElasticSlider bind:value={draft.quality} min={limits.quality.min} max={limits.quality.max} step={1} unit="%" ariaLabel={$language === 'vi' ? 'Chất lượng JPG / AVIF' : 'JPG / AVIF quality'}/>
               </div>
 {/snippet}
 {#snippet folderControl()}
@@ -482,7 +491,7 @@
                   </div>
                   <div class="input-cell">
                     <span class="input-tag">H</span>
-                    <input type="number" min={limits.max_width.min} max={limits.max_width.max} step="1" placeholder={$language === 'vi' ? 'Giữ nguyên' : 'Auto'} bind:value={draft.max_height} class="num-input"/>
+                    <input type="number" min={limits.max_height.min} max={limits.max_height.max} step="1" placeholder={$language === 'vi' ? 'Giữ nguyên' : 'Auto'} bind:value={draft.max_height} class="num-input"/>
                   </div>
                 </div>
               </div>
@@ -507,7 +516,7 @@
                   <span class="row-title">{$language === 'vi' ? 'Chất lượng video (CRF)' : 'Constant Rate Factor (CRF)'}</span>
                   <span class="row-desc">{$language === 'vi' ? 'CRF thấp hơn = chi tiết nét hơn; CRF cao hơn = tệp nhẹ hơn.' : 'Lower CRF = sharper details; higher CRF = smaller file.'}</span>
                 </div>
-                <ElasticSlider bind:value={draft.video_crf} min={limits.video_crf.min} max={limits.video_crf.max} step={1} unit="CRF"/>
+                <ElasticSlider bind:value={draft.video_crf} min={limits.video_crf.min} max={limits.video_crf.max} step={1} unit="CRF" ariaLabel={$language === 'vi' ? 'Chất lượng video (CRF)' : 'Constant Rate Factor (CRF)'}/>
               </div>
 {/snippet}
 {#snippet avifControl()}
@@ -516,7 +525,7 @@
                   <span class="row-title">{$language === 'vi' ? 'Tốc độ mã hóa AVIF' : 'AVIF encoding speed'}</span>
                   <span class="row-desc">{$language === 'vi' ? '1: Nén tốt nhất (chậm) · 10: Nhanh nhất.' : '1 = best compression (slow) · 10 = fastest.'}</span>
                 </div>
-                <ElasticSlider bind:value={draft.avif_speed} min={limits.avif_speed.min} max={limits.avif_speed.max} step={1} unit="/ 10"/>
+                <ElasticSlider bind:value={draft.avif_speed} min={limits.avif_speed.min} max={limits.avif_speed.max} step={1} unit="/ 10" ariaLabel={$language === 'vi' ? 'Tốc độ mã hóa AVIF' : 'AVIF encoding speed'}/>
               </div>
 {/snippet}
 {#snippet gifControl()}
@@ -525,7 +534,7 @@
                   <span class="row-title">{$language === 'vi' ? 'Ngưỡng trong suốt alpha GIF' : 'GIF alpha threshold'}</span>
                   <span class="row-desc">{$language === 'vi' ? 'Các pixel có độ mờ dưới ngưỡng sẽ trở thành hoàn toàn trong suốt.' : 'Pixels below this opacity threshold become transparent.'}</span>
                 </div>
-                <ElasticSlider bind:value={draft.gif_alpha_threshold} min={limits.gif_alpha_threshold.min} max={limits.gif_alpha_threshold.max} step={1} unit="/ 255"/>
+                <ElasticSlider bind:value={draft.gif_alpha_threshold} min={limits.gif_alpha_threshold.min} max={limits.gif_alpha_threshold.max} step={1} unit="/ 255" ariaLabel={$language === 'vi' ? 'Ngưỡng trong suốt alpha GIF' : 'GIF alpha threshold'}/>
               </div>
 {/snippet}
 {#snippet dpiControl()}
@@ -534,7 +543,7 @@
                   <span class="row-title">{$language === 'vi' ? 'Độ phân giải PDF / SVG (DPI)' : 'PDF / SVG render DPI'}</span>
                   <span class="row-desc">{$language === 'vi' ? 'Xuất trang đầu PDF hoặc đồ họa SVG thành ảnh. PDF cần Poppler.' : 'Render the first PDF page or SVG to an image. PDF requires Poppler.'}</span>
                 </div>
-                <ElasticSlider bind:value={draft.dpi} min={limits.dpi.min} max={limits.dpi.max} step={1} unit="DPI"/>
+                <ElasticSlider bind:value={draft.dpi} min={limits.dpi.min} max={limits.dpi.max} step={1} unit="DPI" ariaLabel={$language === 'vi' ? 'Độ phân giải PDF / SVG (DPI)' : 'PDF / SVG render DPI'}/>
               </div>
 {/snippet}
 {#snippet audioControl()}
@@ -806,7 +815,7 @@
                 </div>
 
                 <div class="update-actions">
-                  {#if $updateStore.status === 'available' || $updateStore.status === 'downloading' || $updateStore.status === 'downloaded'}
+                  {#if $updateStore.status === 'available' || $updateStore.status === 'downloading' || $updateStore.status === 'downloaded' || ($updateStore.status === 'error' && ($updateStore.version || $updateStore.latestVersion !== $updateStore.currentVersion))}
                     <button
                       type="button"
                       class="btn-update-primary"
@@ -910,16 +919,16 @@
     outline: none !important;
     -webkit-tap-highlight-color: transparent;
   }
-  button:focus, button:focus-visible,
-  input:focus, input:focus-visible,
-  .nav-item:focus, .nav-item:focus-visible,
-  .btn-reset:focus, .btn-reset:focus-visible,
-  .btn-apply:focus, .btn-apply:focus-visible,
-  .btn-save:focus, .btn-save:focus-visible,
-  .btn-close:focus, .btn-close:focus-visible,
-  .btn-social:focus, .btn-social:focus-visible,
-  .btn-subtle:focus, .btn-subtle:focus-visible,
-  .btn-clear-search:focus, .btn-clear-search:focus-visible {
+  button:focus,
+  input:focus,
+  .nav-item:focus,
+  .btn-reset:focus,
+  .btn-apply:focus,
+  .btn-save:focus,
+  .btn-close:focus,
+  .btn-social:focus,
+  .btn-subtle:focus,
+  .btn-clear-search:focus {
     outline: none !important;
     box-shadow: none !important;
   }
@@ -1069,8 +1078,7 @@
     transition: color 0.14s ease, background 0.14s ease;
   }
 
-  .nav-item:focus,
-  .nav-item:focus-visible {
+  .nav-item:focus {
     outline: none !important;
     box-shadow: none !important;
   }

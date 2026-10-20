@@ -1,12 +1,19 @@
 import { writable, get } from 'svelte/store';
-import { compare } from 'semver';
-import type { Update } from '@tauri-apps/plugin-updater';
+import { clean, coerce, compare, valid } from 'semver';
+import type { DownloadEvent, Update } from '@tauri-apps/plugin-updater';
 import { isTauri } from './tauri-bridge';
+import { t } from './i18n';
+
+interface GitHubReleaseAsset {
+  name?: string;
+  browser_download_url?: string;
+}
 
 export interface UpdateInfo {
   status: 'idle' | 'checking' | 'up-to-date' | 'available' | 'downloading' | 'downloaded' | 'error';
   currentVersion: string;
   latestVersion: string;
+  version?: string | null;
   releaseNotes: string;
   publishedAt: string;
   downloadProgress: number; // 0 to 100
@@ -23,6 +30,7 @@ export const updateStore = writable<UpdateInfo>({
   status: 'idle',
   currentVersion: APP_VERSION,
   latestVersion: APP_VERSION,
+  version: null,
   releaseNotes: '',
   publishedAt: '',
   downloadProgress: 0,
@@ -47,7 +55,10 @@ export function checkForUpdates(manual = false): Promise<void> {
  * Returns 1 if vA > vB, -1 if vA < vB, 0 if equal.
  */
 export function compareVersions(a: string, b: string): number {
-  return compare(a.replace(/^v/, ''), b.replace(/^v/, ''));
+  const normA = valid(clean(a)) ?? coerce(a)?.version ?? null;
+  const normB = valid(clean(b)) ?? coerce(b)?.version ?? null;
+  if (!normA || !normB) return 0;
+  return compare(normA, normB);
 }
 /**
  * Check for new releases.
@@ -72,7 +83,7 @@ async function performUpdateCheck(manual: boolean = false): Promise<void> {
       activeUpdateInstance = null;
       const update = await check();
       if (!update) {
-        updateStore.update(s => ({ ...s, status: 'up-to-date', latestVersion: currentVersion, error: null }));
+        updateStore.update(s => ({ ...s, status: 'up-to-date', latestVersion: currentVersion, version: null, error: null }));
         return;
       }
       if (update) {
@@ -81,6 +92,7 @@ async function performUpdateCheck(manual: boolean = false): Promise<void> {
           status: 'available',
           currentVersion: update.currentVersion || APP_VERSION,
           latestVersion: update.version,
+          version: update.version,
           releaseNotes: update.body || '',
           publishedAt: update.date || '',
           downloadProgress: 0,
@@ -91,7 +103,7 @@ async function performUpdateCheck(manual: boolean = false): Promise<void> {
         });
         return;
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.warn('[Updater] Tauri plugin check failed, falling back to GitHub API:', err);
     }
   }
@@ -127,7 +139,7 @@ async function performUpdateCheck(manual: boolean = false): Promise<void> {
 
     // Find Windows installer asset (.exe)
     const exeAsset = Array.isArray(data.assets)
-      ? data.assets.find((a: any) => a.name?.endsWith('.exe'))
+      ? data.assets.find((a: GitHubReleaseAsset) => a.name?.endsWith('.exe'))
       : null;
     const downloadUrl = exeAsset ? exeAsset.browser_download_url : data.html_url;
 
@@ -137,6 +149,7 @@ async function performUpdateCheck(manual: boolean = false): Promise<void> {
         status: 'available',
         currentVersion,
         latestVersion: tag,
+        version: tag,
         releaseNotes: notes,
         publishedAt: pubDate,
         downloadProgress: 0,
@@ -150,15 +163,17 @@ async function performUpdateCheck(manual: boolean = false): Promise<void> {
         ...s,
         status: 'up-to-date',
         latestVersion: tag || s.currentVersion,
+        version: null,
         error: null,
       }));
     }
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('[Updater] Check failed:', err);
+    const errMsg = err instanceof Error && err.message ? err.message : get(t)('Không thể kết nối đến máy chủ cập nhật.');
     updateStore.update((s) => ({
       ...s,
       status: manual ? 'error' : 'idle',
-      error: manual ? (err.message || 'Không thể kết nối đến máy chủ cập nhật.') : null,
+      error: manual ? errMsg : null,
     }));
   }
 }
@@ -167,13 +182,25 @@ async function performUpdateCheck(manual: boolean = false): Promise<void> {
  * Downloads and installs the pending update.
  */
 export async function installUpdate(): Promise<void> {
+  const currentStatus = get(updateStore).status;
+  if (currentStatus === 'downloading') return;
+  if (currentStatus === 'downloaded') {
+    if (isTauri) {
+      try {
+        const { relaunch } = await import('@tauri-apps/plugin-process');
+        await relaunch();
+      } catch {}
+    }
+    return;
+  }
+
   if (!activeUpdateInstance) {
     // If we only have direct download URL, open it
     const targetUrl = get(updateStore).directDownloadUrl;
     if (targetUrl) {
       try {
         await openReleasePage(targetUrl);
-      } catch (err) {
+      } catch (err: unknown) {
         updateStore.update(s => ({
           ...s,
           status: 'error',
@@ -197,7 +224,7 @@ export async function installUpdate(): Promise<void> {
     let totalLen = 0;
     let downloaded = 0;
 
-    await activeUpdateInstance.downloadAndInstall((event: any) => {
+    await activeUpdateInstance.downloadAndInstall((event: DownloadEvent) => {
       if (event.event === 'Started') {
         totalLen = event.data?.contentLength || 0;
         updateStore.update((s) => ({
@@ -229,12 +256,13 @@ export async function installUpdate(): Promise<void> {
         await relaunch();
       } catch {}
     }
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('[Updater] Install failed:', err);
+    const detail = err instanceof Error && err.message ? err.message : String(err);
     updateStore.update((s) => ({
       ...s,
       status: 'error',
-      error: `Lỗi cài đặt: ${err.message || err}`,
+      error: `${get(t)('Lỗi cài đặt')}: ${detail}`,
     }));
   }
 }
@@ -244,6 +272,15 @@ export async function installUpdate(): Promise<void> {
  */
 export async function openReleasePage(customUrl?: string): Promise<void> {
   const url = customUrl || `https://github.com/${GITHUB_REPO}/releases/latest`;
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error(get(t)('Không thể kết nối đến máy chủ cập nhật.'));
+  }
+  if (parsed.protocol !== 'https:') {
+    throw new Error(get(t)('Không thể kết nối đến máy chủ cập nhật.'));
+  }
   if (isTauri) {
     const { openUrl } = await import('@tauri-apps/plugin-opener');
     await openUrl(url);

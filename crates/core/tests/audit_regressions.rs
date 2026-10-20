@@ -423,3 +423,166 @@ fn concurrent_same_stem_conversions_publish_unique_complete_files() {
     }
     assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 5);
 }
+
+#[test]
+fn archive_curdir_and_duplicate_directories_and_detection_and_registry_guards() {
+    let dir = tempdir().unwrap();
+    let registry = Registry::default();
+
+    // 1. Archive with `./` prefix, root `.` entry, and duplicate directory entries
+    let zip_path = dir.path().join("curdir.zip");
+    {
+        let mut zip = zip::ZipWriter::new(std::fs::File::create(&zip_path).unwrap());
+        let opts = zip::write::SimpleFileOptions::default();
+        zip.add_directory("./", opts).unwrap();
+        zip.add_directory("folder/", opts).unwrap();
+        zip.add_directory("./folder/", opts).unwrap();
+        zip.start_file("./folder/hello.txt", opts).unwrap();
+        zip.write_all(b"hello").unwrap();
+        zip.finish().unwrap();
+    }
+    let targz = registry
+        .convert(
+            &zip_path,
+            Format::TarGz,
+            &Options::default(),
+            &|_| {},
+            &CancelToken::new(),
+        )
+        .unwrap();
+    let roundtrip = registry
+        .convert(
+            &targz,
+            Format::Zip,
+            &Options::default(),
+            &|_| {},
+            &CancelToken::new(),
+        )
+        .unwrap();
+    let mut archive = zip::ZipArchive::new(std::fs::File::open(roundtrip).unwrap()).unwrap();
+    assert!(archive.by_name("folder/hello.txt").is_ok());
+
+    // 2. XML single-key @attr / $text root wrapping and mixed content rejection
+    for root_case in [r#"{"@id":"1"}"#, r#"{"$text":"hello"}"#] {
+        let json_in = dir.path().join("root_attr.json");
+        std::fs::write(&json_in, root_case).unwrap();
+        assert!(registry
+            .convert(
+                &json_in,
+                Format::Xml,
+                &Options::default(),
+                &|_| {},
+                &CancelToken::new(),
+            )
+            .is_ok());
+    }
+    let mixed_json = dir.path().join("mixed.json");
+    std::fs::write(&mixed_json, r#"{"root":{"$text":"text","child":"val"}}"#).unwrap();
+    assert!(registry
+        .convert(
+            &mixed_json,
+            Format::Xml,
+            &Options::default(),
+            &|_| {},
+            &CancelToken::new(),
+        )
+        .is_err());
+
+    // 3. Detection: multi-byte EBML VINT, ID3 fallback, m4a brands, uppercase <SVG>, comment before DOCTYPE
+    let mut webm_vint2 = b"\x1aE\xdf\xa3".to_vec();
+    webm_vint2.extend_from_slice(b"\x42\x82\x40\x04webm");
+    let webm_file = dir.path().join("vint2.mkv");
+    std::fs::write(&webm_file, webm_vint2).unwrap();
+    assert_eq!(detect_format(&webm_file).unwrap(), Format::Webm);
+
+    let id3_mp3 = dir.path().join("unknown_frame.bin");
+    std::fs::write(&id3_mp3, b"ID3\x04\0\0\0\0\0\x02\0\0\xff\xf3\x84\xc4").unwrap();
+    assert_eq!(detect_format(&id3_mp3).unwrap(), Format::Mp3);
+
+    let dash_m4a = dir.path().join("track.m4a");
+    std::fs::write(&dash_m4a, b"\0\0\0\x18ftypdash\0\0\0\0iso6mp41").unwrap();
+    assert_eq!(detect_format(&dash_m4a).unwrap(), Format::M4a);
+
+    let upper_svg = dir.path().join("upper.bin");
+    std::fs::write(&upper_svg, b"<SVG xmlns=\"http://www.w3.org/2000/svg\"/>").unwrap();
+    assert_eq!(detect_format(&upper_svg).unwrap(), Format::Svg);
+
+    let commented_html = dir.path().join("commented.bin");
+    std::fs::write(
+        &commented_html,
+        b"<!-- leading comment -->\n<!DOCTYPE html><div>hi</div>",
+    )
+    .unwrap();
+    assert_eq!(detect_format(&commented_html).unwrap(), Format::Html);
+
+    // 4. Direct missing converter returns EngineMissing instead of taking a multi-hop detour
+    struct MissingDirect;
+    impl Converter for MissingDirect {
+        fn name(&self) -> &'static str {
+            "missing-direct"
+        }
+        fn sources(&self) -> &[Format] {
+            &[Format::Png]
+        }
+        fn targets(&self, _: Format) -> Vec<Format> {
+            vec![Format::Html]
+        }
+        fn available(&self) -> Availability {
+            Availability::Missing("direct tool missing".into())
+        }
+        fn convert(
+            &self,
+            _: &Path,
+            _: &Path,
+            _: &Options,
+            _: &dyn Fn(f32),
+            _: &CancelToken,
+        ) -> vertex_core::Result<()> {
+            unreachable!()
+        }
+    }
+    struct Hop1;
+    impl Converter for Hop1 {
+        fn name(&self) -> &'static str {
+            "hop1"
+        }
+        fn sources(&self) -> &[Format] {
+            &[Format::Png]
+        }
+        fn targets(&self, _: Format) -> Vec<Format> {
+            vec![Format::Txt]
+        }
+        fn available(&self) -> Availability {
+            Availability::Ok
+        }
+        fn convert(
+            &self,
+            _: &Path,
+            output: &Path,
+            _: &Options,
+            _: &dyn Fn(f32),
+            _: &CancelToken,
+        ) -> vertex_core::Result<()> {
+            std::fs::write(output, b"txt").unwrap();
+            Ok(())
+        }
+    }
+    let mut custom_reg = Registry::new();
+    custom_reg.register(std::sync::Arc::new(MissingDirect));
+    custom_reg.register(std::sync::Arc::new(Hop1));
+    custom_reg.register(std::sync::Arc::new(
+        vertex_core::converters::data::TextConverter,
+    ));
+    let png_path = dir.path().join("src.png");
+    image::RgbImage::new(2, 2).save(&png_path).unwrap();
+    assert!(matches!(
+        custom_reg.convert(
+            &png_path,
+            Format::Html,
+            &Options::default(),
+            &|_| {},
+            &CancelToken::new(),
+        ),
+        Err(vertex_core::VertexError::EngineMissing(_))
+    ));
+}

@@ -8,6 +8,7 @@ $vertexExitCode = 0
 function Invoke-VertexCheck {
     param([string]$Label, [scriptblock]$Command)
     Write-Host $Label -ForegroundColor Cyan
+    $global:LASTEXITCODE = 0
     & $Command
     if ($LASTEXITCODE -ne 0) { throw "$Label failed (exit $LASTEXITCODE)" }
 }
@@ -17,7 +18,7 @@ try {
     Invoke-VertexCheck 'Cargo check' { cargo check --workspace --locked }
     if ($FixFormat) { Invoke-VertexCheck 'Rust format' { cargo fmt --all } }
     Invoke-VertexCheck 'Verify Rust formatting' { cargo fmt --all -- --check }
-    & (Join-Path $WorkspaceRoot 'tests\verify_scripts.ps1')
+    Invoke-VertexCheck 'Verify scripts' { & (Join-Path $WorkspaceRoot 'tests\verify_scripts.ps1') }
     Push-Location $FrontendDir
     try {
         if (-not (Test-Path -LiteralPath 'node_modules')) { Invoke-VertexCheck 'Install frontend dependencies' { npm ci } }

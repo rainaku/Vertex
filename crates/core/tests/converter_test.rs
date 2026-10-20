@@ -411,7 +411,7 @@ fn video_targets_group_audio_and_unsupported_routes_report_formats() {
             .unwrap_err();
         assert_eq!(
             error.to_string(),
-            format!("Vertex chưa hỗ trợ chuyển đổi từ PNG sang {target}.")
+            format!("Vertex chưa hỗ trợ chuyển đổi từ PNG sang {target}. / Conversion from PNG to {target} is not supported.")
         );
     }
     assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);

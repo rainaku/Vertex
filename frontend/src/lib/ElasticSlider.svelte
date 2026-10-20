@@ -7,7 +7,6 @@
   export let step: number = 1;
   export let unit: string = '%';
   export let ariaLabel: string | undefined = undefined;
-  export let ticks: number = 15;
   export let onChange: ((val: number) => void) | undefined = undefined;
 
   let containerEl: HTMLDivElement;
@@ -93,7 +92,7 @@
   role="slider"
   aria-label={ariaLabel}
   tabindex="0"
-  aria-valuenow={value}
+  aria-valuenow={clamped}
   aria-valuemin={min}
   aria-valuemax={max}
   on:keydown={handleKeyDown}
@@ -101,22 +100,12 @@
   on:pointermove={handlePointerMove}
   on:pointerup={handlePointerUp}
   on:pointercancel={handlePointerUp}
+  on:lostpointercapture={handlePointerUp}
 >
   <!-- Track: only this rect is used for position math -->
   <div class="slider-track" bind:this={trackEl}>
     <!-- Fill region left of thumb -->
     <div class="track-fill" style="width: {pct}%;"></div>
-
-    <!-- Ruler ticks — evenly spaced, independent of edges -->
-    <div class="ticks-layer">
-      {#each Array(ticks) as _, i}
-        <span
-          class="tick"
-          class:tick-past={i / (ticks - 1) <= pct / 100}
-          class:tick-major={i === 0 || i === ticks - 1 || i % Math.ceil(ticks / 4) === 0}
-        ></span>
-      {/each}
-    </div>
 
     <!--
       Thumb: positioned with left clamped by CSS padding so it never
@@ -202,34 +191,6 @@
   /* Spring pop on release */
   .slider-root.released .track-fill {
     transition: width 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
-  }
-
-  /* ─── Ruler Ticks (Hidden for sleek V-Notch pill design) ────────────────── */
-  .ticks-layer {
-    display: none;
-  }
-
-  .tick {
-    width: 1px;
-    height: 7px;
-    background: rgba(255, 255, 255, 0.12);
-    border-radius: 1px;
-    flex-shrink: 0;
-    transition: background 0.15s ease, height 0.15s ease;
-  }
-
-  .tick.tick-major {
-    height: 12px;
-    background: rgba(255, 255, 255, 0.18);
-  }
-
-  .tick.tick-past {
-    background: rgba(255, 255, 255, 0.32);
-  }
-
-  .tick.tick-major.tick-past {
-    background: rgba(255, 255, 255, 0.45);
-    height: 14px;
   }
 
   /* ─── Thumb ───────────────────────────────────────────────────────────────── */

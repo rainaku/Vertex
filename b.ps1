@@ -23,6 +23,8 @@ $WorkspaceRoot = $PSScriptRoot
 $FrontendDir = Join-Path $WorkspaceRoot "frontend"
 $BundleDir = Join-Path $WorkspaceRoot "target\release\bundle"
 . (Join-Path $WorkspaceRoot 'scripts\BuildTools.ps1')
+$origTauriSigningPrivateKey = $env:TAURI_SIGNING_PRIVATE_KEY
+$origTauriSigningPrivateKeyPassword = $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD
 Push-Location $WorkspaceRoot
 try {
 
@@ -99,6 +101,10 @@ if ($Clean) {
     Remove-VertexBuildDirectory -LiteralPath (Join-Path $FrontendDir "dist") -WorkspaceRoot $WorkspaceRoot
     Remove-VertexBuildDirectory -LiteralPath $BundleDir -WorkspaceRoot $WorkspaceRoot
     cargo clean -p vertex-app
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "[!] 'cargo clean' that bai voi ma loi: $LASTEXITCODE" -ForegroundColor Red
+        exit $LASTEXITCODE
+    }
     Write-Host "    Don dep hoan tat." -ForegroundColor Green
 } else {
     Write-Host ">>> [3/5] Bo qua buoc Clean (su dung lai cache de build nhanh)." -ForegroundColor DarkGray
@@ -238,6 +244,9 @@ if ($foundInstallers.Count -gt 0) {
                     $signArgs = @('-NoProfile', '-File', $signScript, '-InstallerPath', $file.FullName, '-Version', $appVersion)
                     if ($foundKey) { $signArgs += @('-PrivateKeyPath', $foundKey) }
                     & $pwshCmd.Source @signArgs
+                    if ($LASTEXITCODE -ne 0) {
+                        throw "Sign-UpdateManifest.ps1 that bai voi ma loi: $LASTEXITCODE"
+                    }
                 } else {
                     Write-Host "    [!] Can PowerShell 7 (pwsh) de ky manifest." -ForegroundColor Yellow
                 }
@@ -297,10 +306,13 @@ if ($foundInstallers.Count -gt 0) {
                 }
             }
             [IO.File]::WriteAllText($outLatestJson, ($manifestObj | ConvertTo-Json -Depth 5), [Text.UTF8Encoding]::new($false))
+            Copy-Item -LiteralPath $outLatestJson -Destination (Join-Path $WorkspaceRoot "release\latest.json") -Force
             if ($copiedFiles -notcontains "latest.json") {
                 $copiedFiles += "latest.json"
             }
-        } catch {}
+        } catch {
+            Write-Warning "Khong the tao latest.json: $_"
+        }
     }
 
     if ($copiedFiles.Count -gt 0) {
@@ -336,4 +348,8 @@ if ($foundInstallers.Count -gt 0) {
 
 Write-Host ""
 
-} finally { Pop-Location }
+} finally {
+    $env:TAURI_SIGNING_PRIVATE_KEY = $origTauriSigningPrivateKey
+    $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = $origTauriSigningPrivateKeyPassword
+    Pop-Location
+}

@@ -84,11 +84,16 @@ const vi = {
   "Âm thanh": "Âm thanh",
   "Video": "Video",
   "Tài liệu": "Tài liệu",
+  "Bảng tính": "Bảng tính",
+  "Trình chiếu": "Trình chiếu",
+  "Tệp nén": "Tệp nén",
   "Tệp": "Tệp",
   "+ thả để chuyển đổi": "+ thả để chuyển đổi",
   "Tệp được hỗ trợ": "Tệp được hỗ trợ",
   "Ngôn ngữ": "Ngôn ngữ",
   "Không thể đổi ngôn ngữ. Hãy thử lại.": "Không thể đổi ngôn ngữ. Hãy thử lại.",
+  "Không thể kết nối đến máy chủ cập nhật.": "Không thể kết nối đến máy chủ cập nhật.",
+  "Lỗi cài đặt": "Lỗi cài đặt",
   "Cần cài FFmpeg để dùng định dạng này.": "Cần cài FFmpeg để dùng định dạng này.",
   "Định dạng này chưa dùng được.": "Định dạng này chưa dùng được.",
   "Vertex – Chuyển đổi tệp": "Vertex – Chuyển đổi tệp"
@@ -170,11 +175,16 @@ const en: Record<keyof typeof vi, string> = {
   "Âm thanh": "Audio",
   "Video": "Video",
   "Tài liệu": "Document",
+  "Bảng tính": "Spreadsheet",
+  "Trình chiếu": "Presentation",
+  "Tệp nén": "Archive",
   "Tệp": "Files",
   "+ thả để chuyển đổi": "+ drop to convert",
   "Tệp được hỗ trợ": "Supported files",
   "Ngôn ngữ": "Language",
   "Không thể đổi ngôn ngữ. Hãy thử lại.": "Couldn’t change language. Try again.",
+  "Không thể kết nối đến máy chủ cập nhật.": "Could not connect to the update server.",
+  "Lỗi cài đặt": "Installation failed",
   "Cần cài FFmpeg để dùng định dạng này.": "Install FFmpeg to use this format.",
   "Định dạng này chưa dùng được.": "This format is unavailable.",
   "Vertex – Chuyển đổi tệp": "Vertex – File converter"
@@ -187,16 +197,23 @@ export async function syncNativeLanguage(lang: Language) {
       await invoke('set_app_language', { language: lang });
   }
 }
-export async function setLanguage(lang: Language) {
-  const previous = get(language);
-  await syncNativeLanguage(lang);
-  try {
-    localStorage.setItem(key, lang);
-  } catch (error) {
-    await syncNativeLanguage(previous);
-    throw error;
-  }
-  language.set(lang);
+let languageChangeQueue: Promise<void> = Promise.resolve();
+export function setLanguage(lang: Language): Promise<void> {
+  const run = languageChangeQueue.then(async () => {
+    const previous = get(language);
+    await syncNativeLanguage(lang);
+    try {
+      localStorage.setItem(key, lang);
+    } catch (error) {
+      try {
+        await syncNativeLanguage(previous);
+      } catch {}
+      throw error;
+    }
+    language.set(lang);
+  });
+  languageChangeQueue = run.catch(() => {});
+  return run;
 }
 language.subscribe(lang => {
   document.documentElement.lang = lang;

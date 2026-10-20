@@ -72,7 +72,7 @@ pub fn run() {
         .setup(|app| {
             // Build Tray Menu
             let toggle_i =
-                MenuItem::with_id(app, "toggle", "Hiện / Ẩn Vertex", true, None::<&str>)?;
+                MenuItem::with_id(app, "toggle", "Hiện / ẩn Vertex", true, None::<&str>)?;
             let quit_i = MenuItem::with_id(app, "quit", "Thoát Vertex", true, None::<&str>)?;
             let settings_i =
                 MenuItem::with_id(app, "settings", "Cài đặt nâng cao…", true, None::<&str>)?;
@@ -144,6 +144,7 @@ pub fn run() {
             drag_detector::start_drag_detector(app.handle().clone());
 
             // Start background integrity check (Mark of the Web origin check)
+            let integrity_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 tokio::time::sleep(std::time::Duration::from_secs(5)).await;
                 if vertex_core::security::AppIntegrityService::is_dev_or_test_environment() {
@@ -151,12 +152,20 @@ pub fn run() {
                 }
 
                 if let Ok(exe_path) = std::env::current_exe() {
-                    let (is_trusted, _) =
+                    let (is_trusted, origin_url) =
                         vertex_core::security::AppIntegrityService::check_download_origin(
                             &exe_path,
                         );
                     if !is_trusted {
-                        tracing::warn!("Application was downloaded from an untrusted origin");
+                        if let Some(url) = origin_url {
+                            tracing::warn!(
+                                %url,
+                                "Application was downloaded from an untrusted origin"
+                            );
+                            let _ = integrity_handle.emit("untrusted_origin", url);
+                        } else {
+                            tracing::warn!("Application was downloaded from an untrusted origin");
+                        }
                     }
                 }
             });
@@ -178,11 +187,19 @@ pub fn run() {
 
                                     // Trigger desktop notification
                                     use tauri_plugin_notification::NotificationExt;
+                                    let body = match current_language() {
+                                        "en" => format!(
+                                            "Update v{version} downloaded. Restart Vertex to apply."
+                                        ),
+                                        _ => format!(
+                                            "Đã tải bản cập nhật v{version}. Khởi động lại ứng dụng để áp dụng."
+                                        ),
+                                    };
                                     let _ = update_handle
                                         .notification()
                                         .builder()
                                         .title("Vertex")
-                                        .body(format!("Đã có phiên bản mới v{}! Nhấn vào Cài đặt để cập nhật.", version))
+                                        .body(body)
                                         .show();
 
                                     // Notify frontend

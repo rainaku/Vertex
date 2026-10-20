@@ -14,23 +14,28 @@ if ($privatePath.StartsWith($repoRoot + [IO.Path]::DirectorySeparatorChar, [Stri
 if ((Test-Path -LiteralPath $privatePath) -or (Test-Path -LiteralPath $publicPath)) {
     throw 'Refusing to overwrite an existing signing key. Key rotation requires a migration plan.'
 }
-[IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($privatePath)) | Out-Null
-[IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($publicPath)) | Out-Null
-if ($IsWindows) {
-    # Protect the parent directory before creating the private key.
-    $directory = [IO.DirectoryInfo]::new([IO.Path]::GetDirectoryName($privatePath))
-    $acl = [Security.AccessControl.DirectorySecurity]::new()
-    $acl.SetAccessRuleProtection($true, $false)
-    $sid = [Security.Principal.WindowsIdentity]::GetCurrent().User
-    $acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new(
-        $sid, 'FullControl', 'ContainerInherit,ObjectInherit', 'None', 'Allow'))
-    [IO.FileSystemAclExtensions]::SetAccessControl($directory, $acl)
-} else {
+if (-not $IsWindows) {
     throw 'Generate the production key on Windows in a dedicated private directory.'
+}
+$privateDir = [IO.Path]::GetDirectoryName($privatePath)
+$publicDir = [IO.Path]::GetDirectoryName($publicPath)
+if ([string]::IsNullOrWhiteSpace($privateDir)) {
+    throw "Invalid private key path (missing parent directory): $privatePath"
+}
+[IO.Directory]::CreateDirectory($privateDir) | Out-Null
+if (-not [string]::IsNullOrWhiteSpace($publicDir)) {
+    [IO.Directory]::CreateDirectory($publicDir) | Out-Null
 }
 $key = [Security.Cryptography.ECDsa]::Create([Security.Cryptography.ECCurve]::CreateFromFriendlyName('nistP256'))
 try {
     [IO.File]::WriteAllText($privatePath, $key.ExportPkcs8PrivateKeyPem())
+    $privateFile = [IO.FileInfo]::new($privatePath)
+    $acl = [Security.AccessControl.FileSecurity]::new()
+    $acl.SetAccessRuleProtection($true, $false)
+    $sid = [Security.Principal.WindowsIdentity]::GetCurrent().User
+    $acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new(
+        $sid, 'FullControl', 'None', 'None', 'Allow'))
+    [IO.FileSystemAclExtensions]::SetAccessControl($privateFile, $acl)
     [IO.File]::WriteAllText($publicPath, $key.ExportSubjectPublicKeyInfoPem())
     Write-Host 'Vertex signing key generated successfully.' -ForegroundColor Green
     Write-Host "Public key:  $publicPath" -ForegroundColor Cyan

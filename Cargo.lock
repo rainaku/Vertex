@@ -5613,9 +5613,7 @@ dependencies = [
  "bytes",
  "libc",
  "mio",
- "parking_lot",
  "pin-project-lite",
- "signal-hook-registry",
  "socket2",
  "tokio-macros",
  "windows-sys 0.61.2",
@@ -6084,7 +6082,6 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 name = "vertex-app"
 version = "1.2.0"
 dependencies = [
- "anyhow",
  "serde",
  "serde_json",
  "tauri",
@@ -6096,7 +6093,6 @@ dependencies = [
  "tauri-plugin-opener",
  "tauri-plugin-process",
  "tauri-plugin-updater",
- "thiserror 2.0.21",
  "tokio",
  "tracing",
  "tracing-subscriber",

@@ -153,16 +153,6 @@ impl Registry {
         let from = detect_format(input)?;
         let route = if let Some(conv) = self.find_converter(from, target) {
             vec![(target, conv)]
-        } else if let Some(path) = self.find_path(from, target) {
-            path.into_iter()
-                .map(|(a, b)| {
-                    self.find_converter(a, b)
-                        .map(|conv| (b, conv))
-                        .ok_or_else(|| {
-                            VertexError::EngineMissing(format!("Engine for {a} -> {b} disappeared"))
-                        })
-                })
-                .collect::<Result<Vec<_>>>()?
         } else {
             for conv in &self.converters {
                 if conv.sources().contains(&from) && conv.targets(from).contains(&target) {
@@ -171,10 +161,24 @@ impl Registry {
                     }
                 }
             }
-            return Err(VertexError::NoConversionRoute {
-                from: from.to_string(),
-                to: target.to_string(),
-            });
+            if let Some(path) = self.find_path(from, target) {
+                path.into_iter()
+                    .map(|(a, b)| {
+                        self.find_converter(a, b)
+                            .map(|conv| (b, conv))
+                            .ok_or_else(|| {
+                                VertexError::EngineMissing(format!(
+                                    "Engine for {a} -> {b} disappeared"
+                                ))
+                            })
+                    })
+                    .collect::<Result<Vec<_>>>()?
+            } else {
+                return Err(VertexError::NoConversionRoute {
+                    from: from.to_string(),
+                    to: target.to_string(),
+                });
+            }
         };
         let mut destination = resolve_target_path(input, target, &opts)?;
         let mut staged = crate::path_utils::stage_output(&destination)?;

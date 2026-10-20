@@ -69,6 +69,8 @@ mod windows_drag {
     }
     static EVENTS: OnceLock<mpsc::Sender<Event>> = OnceLock::new();
     static TRACK_MOVES: AtomicBool = AtomicBool::new(false);
+    static LEFT_DOWN: AtomicBool = AtomicBool::new(false);
+    static SHIFT_DOWN: AtomicBool = AtomicBool::new(false);
 
     unsafe extern "system" fn mouse_hook(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
         if code >= 0 {
@@ -85,18 +87,23 @@ mod windows_drag {
             };
             let message = wparam as u32;
             let point = (*(lparam as *const MSLLHOOKSTRUCT)).pt;
-            let event =
-                if message == down && (GetAsyncKeyState(VK_SHIFT as i32) as u16 & 0x8000) != 0 {
+            let event = if message == down {
+                LEFT_DOWN.store(true, Ordering::Relaxed);
+                if (GetAsyncKeyState(VK_SHIFT as i32) as u16 & 0x8000) != 0 {
                     TRACK_MOVES.store(true, Ordering::Relaxed);
                     Some(Event::Down(point))
-                } else if message == up {
-                    TRACK_MOVES.store(false, Ordering::Relaxed);
-                    Some(Event::Up)
-                } else if message == WM_MOUSEMOVE && TRACK_MOVES.load(Ordering::Relaxed) {
-                    Some(Event::Move(point))
                 } else {
                     None
-                };
+                }
+            } else if message == up {
+                LEFT_DOWN.store(false, Ordering::Relaxed);
+                TRACK_MOVES.store(false, Ordering::Relaxed);
+                Some(Event::Up)
+            } else if message == WM_MOUSEMOVE && TRACK_MOVES.load(Ordering::Relaxed) {
+                Some(Event::Move(point))
+            } else {
+                None
+            };
             if let (Some(sender), Some(event)) = (EVENTS.get(), event) {
                 let _ = sender.send(event);
             }
@@ -105,31 +112,40 @@ mod windows_drag {
     }
 
     unsafe extern "system" fn keyboard_hook(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
-        if code >= 0 && matches!(wparam as u32, WM_KEYDOWN | WM_SYSKEYDOWN) {
+        if code >= 0 {
             let key = (*(lparam as *const KBDLLHOOKSTRUCT)).vkCode;
-            if key == u32::from(VK_ESCAPE) {
-                TRACK_MOVES.store(false, Ordering::Relaxed);
-                if let Some(sender) = EVENTS.get() {
-                    let _ = sender.send(Event::Escape);
-                }
-            } else if [VK_SHIFT, VK_LSHIFT, VK_RSHIFT]
+            let is_shift = [VK_SHIFT, VK_LSHIFT, VK_RSHIFT]
                 .iter()
-                .any(|v| key == u32::from(*v))
-            {
-                let primary = if GetSystemMetrics(SM_SWAPBUTTON) != 0 {
-                    VK_RBUTTON
-                } else {
-                    VK_LBUTTON
-                };
-                let mut point = POINT { x: 0, y: 0 };
-                if GetAsyncKeyState(primary as i32) as u16 & 0x8000 != 0
-                    && GetCursorPos(&mut point) != 0
-                {
-                    TRACK_MOVES.store(true, Ordering::Relaxed);
-                    if let Some(sender) = EVENTS.get() {
-                        let _ = sender.send(Event::Down(point));
+                .any(|v| key == u32::from(*v));
+            match wparam as u32 {
+                WM_KEYDOWN | WM_SYSKEYDOWN => {
+                    if key == u32::from(VK_ESCAPE) {
+                        TRACK_MOVES.store(false, Ordering::Relaxed);
+                        if let Some(sender) = EVENTS.get() {
+                            let _ = sender.send(Event::Escape);
+                        }
+                    } else if is_shift && !SHIFT_DOWN.swap(true, Ordering::Relaxed) {
+                        let primary = if GetSystemMetrics(SM_SWAPBUTTON) != 0 {
+                            VK_RBUTTON
+                        } else {
+                            VK_LBUTTON
+                        };
+                        let mut point = POINT { x: 0, y: 0 };
+                        if GetAsyncKeyState(primary as i32) as u16 & 0x8000 != 0
+                            && GetCursorPos(&mut point) != 0
+                        {
+                            LEFT_DOWN.store(true, Ordering::Relaxed);
+                            TRACK_MOVES.store(true, Ordering::Relaxed);
+                            if let Some(sender) = EVENTS.get() {
+                                let _ = sender.send(Event::Down(point));
+                            }
+                        }
                     }
                 }
+                WM_KEYUP | WM_SYSKEYUP if is_shift => {
+                    SHIFT_DOWN.store(false, Ordering::Relaxed);
+                }
+                _ => {}
             }
         }
         CallNextHookEx(std::ptr::null_mut(), code, wparam, lparam)
@@ -199,7 +215,10 @@ mod windows_drag {
                     Event::Up => gesture.release(),
                     Event::Escape => gesture.escape(),
                 };
-                TRACK_MOVES.store(gesture.needs_motion(), Ordering::Relaxed);
+                TRACK_MOVES.store(
+                    gesture.needs_motion() && LEFT_DOWN.load(Ordering::Relaxed),
+                    Ordering::Relaxed,
+                );
                 match action {
                     Action::Show { right } => {
                         let Event::Move(point) = event else {

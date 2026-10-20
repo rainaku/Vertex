@@ -3,18 +3,8 @@ use std::fs::File;
 use std::io::Read;
 use std::path::Path;
 
-pub const OFFICIAL_REPO_OWNER: &str = "rainaku";
-pub const OFFICIAL_REPO_NAME: &str = "Vertex";
-pub const OFFICIAL_RELEASES_URL: &str = "https://github.com/rainaku/Vertex/releases";
-
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub enum IntegrityCheckStatus {
-    Verified,
-    HashMismatch,
-    ReleaseNotFound,
-    NetworkError,
-    Skipped,
-}
+const OFFICIAL_REPO_OWNER: &str = "rainaku";
+const OFFICIAL_REPO_NAME: &str = "Vertex";
 
 pub struct AppIntegrityService;
 

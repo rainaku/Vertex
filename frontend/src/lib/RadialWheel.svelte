@@ -12,6 +12,7 @@
   export let status: 'idle' | 'converting' | 'done' | 'error' = 'idle';
   export let conversionError = '';
   export let sourceFormat: string | null = null;
+  export let centerLabel: string | null = null;
   export let hasMorePages: boolean = false;
   export let page: number = 0;
   export let totalPages: number = 1;
@@ -32,7 +33,7 @@
 
   $: activeFormat = activeIndex >= 0 && activeIndex < formats.length ? formats[activeIndex] : null;
 
-  let dwellTimer: any = null;
+  let dwellTimer: ReturnType<typeof setTimeout> | null = null;
   let dwellCooldown = false;
   let cooldownTimer: ReturnType<typeof setTimeout>;
   onDestroy(() => { clearDwell(); clearTimeout(cooldownTimer); });
@@ -299,13 +300,13 @@
         {:else if activeFormat}
           <tspan x="0" y="-5" font-size="18" font-weight="800">{activeFormat.label}</tspan>
           <tspan x="0" y="12" font-size="11" font-weight="700" letter-spacing="0.3px" opacity="0.65">
-            {$t(activeFormat.format === sourceFormat ? 'Nén lại' : activeFormat.category === 'image' ? 'Ảnh' : activeFormat.category === 'audio' ? 'Âm thanh' : activeFormat.category === 'video' ? 'Video' : activeFormat.category === 'document' ? 'Tài liệu' : 'Định dạng')}
+            {$t(activeFormat.format === sourceFormat ? 'Nén lại' : activeFormat.category === 'image' ? 'Ảnh' : activeFormat.category === 'audio' ? 'Âm thanh' : activeFormat.category === 'video' ? 'Video' : activeFormat.category === 'document' ? 'Tài liệu' : activeFormat.category === 'spreadsheet' ? 'Bảng tính' : activeFormat.category === 'presentation' ? 'Trình chiếu' : activeFormat.category === 'archive' ? 'Tệp nén' : 'Định dạng')}
           </tspan>
         {:else if activeIndex === 7 && hasMorePages}
           <tspan x="0" y="-5" font-size="16" font-weight="800">{$t("Trang")} {(page + 1) % totalPages + 1}/{totalPages}</tspan>
           <tspan x="0" y="12" font-size="11" font-weight="700" letter-spacing="0.3px" opacity="0.65">{$t("Trang tiếp")}</tspan>
-        {:else if sourceFormat}
-          {sourceFormat}
+        {:else if centerLabel || sourceFormat}
+          {centerLabel || sourceFormat}
         {:else}
           VERTEX
         {/if}
