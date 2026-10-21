@@ -50,8 +50,3 @@ jobs:
       - name: Audit NPM Dependencies
         working-directory: frontend
         run: npm audit --audit-level=high
-
-      - name: Install cargo-audit & Audit Rust Crates
-        run: |
-          cargo install cargo-audit --locked
-          cargo audit

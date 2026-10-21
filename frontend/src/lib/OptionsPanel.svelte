@@ -8,6 +8,7 @@
   import { isTauri } from './tauri-bridge';
   import { updateStore, checkForUpdates, installUpdate, openReleasePage } from './updater';
   import ElasticSlider from './ElasticSlider.svelte';
+  import { soundEnabled, setSoundEnabled, playSound } from './sound';
   import { gsap } from 'gsap';
   import { enable, disable, isEnabled } from '@tauri-apps/plugin-autostart';
   import SlidersHorizontalIcon from 'phosphor-svelte/lib/SlidersHorizontalIcon';
@@ -311,9 +312,11 @@
     }
   }
 
-  type SettingId = 'language' | 'profiles' | 'quality' | 'folder' | 'collision' | 'metadata' | 'background' | 'dimensions' | 'codec' | 'crf' | 'avif' | 'gif' | 'dpi' | 'audio' | 'preset';
+  type SettingId = 'language' | 'sound' | 'profiles' | 'quality' | 'folder' | 'collision' | 'metadata' | 'background' | 'dimensions' | 'codec' | 'crf' | 'avif' | 'gif' | 'dpi' | 'audio' | 'preset';
   const searchTerms: Record<SettingId, string> = {
-    language: 'ngôn ngữ language tiếng việt english', profiles: 'hồ sơ profile balanced web quality preset',
+    language: 'ngôn ngữ language tiếng việt english',
+    sound: 'âm thanh hiệu ứng sound effects sfx tiếng động mute',
+    profiles: 'hồ sơ profile balanced web quality preset',
     quality: 'chất lượng quality jpg avif nén', folder: 'thư mục folder output đầu ra đích',
     collision: 'trùng tên tệp collision ghi đè overwrite', metadata: 'exif siêu dữ liệu metadata gps riêng tư',
     background: 'màu nền background color', dimensions: 'kích thước rộng cao width height dimension video',
@@ -322,7 +325,7 @@
     audio: 'âm thanh audio bitrate kbps video', preset: 'preset cpu fast medium slow tốc độ encode video',
   };
   const sections: {tab: TabKey; vi: string; en: string; rows: SettingId[]}[] = [
-    {tab: 'general', vi: '', en: '', rows: ['language']},
+    {tab: 'general', vi: '', en: '', rows: ['language', 'sound']},
     {tab: 'general', vi: 'CẤU HÌNH NHANH', en: 'PRESETS', rows: ['profiles']},
     {tab: 'general', vi: 'THƯ MỤC & ĐÍCH ĐẾN', en: 'OUTPUT DESTINATION', rows: ['folder', 'collision']},
     {tab: 'image', vi: 'CHẤT LƯỢNG & NÉN HÌNH ẢNH', en: 'IMAGE QUALITY & COMPRESSION', rows: ['quality', 'metadata', 'background', 'avif', 'gif']},
@@ -383,6 +386,27 @@
                   <button type="button" class="seg-btn" class:seg-on={$language === 'vi'} on:click={() => handleLanguageChange('vi')}>Tiếng Việt</button>
                   <button type="button" class="seg-btn" class:seg-on={$language === 'en'} on:click={() => handleLanguageChange('en')}>English</button>
                 </div>
+              </div>
+{/snippet}
+{#snippet soundControl()}
+<div class="setting-row">
+                <div class="row-info">
+                  <span class="row-title">{$language === 'vi' ? 'Hiệu ứng âm thanh' : 'Sound Effects'}</span>
+                  <span class="row-desc">{$language === 'vi' ? 'Phát âm báo nhẹ khi mở vòng quay, chọn định dạng và hoàn tất chuyển đổi.' : 'Play subtle audio cues when opening the wheel, hovering formats, and finishing conversions.'}</span>
+                </div>
+                <label class="switch">
+                  <input
+                    type="checkbox"
+                    checked={$soundEnabled}
+                    on:change={(e) => {
+                      const enabled = (e.currentTarget as HTMLInputElement).checked;
+                      setSoundEnabled(enabled);
+                      if (enabled) playSound('petal_hover');
+                    }}
+                    aria-label={$language === 'vi' ? 'Hiệu ứng âm thanh' : 'Sound Effects'}
+                  />
+                  <span class="slider"></span>
+                </label>
               </div>
 {/snippet}
 {#snippet profilesControl()}
@@ -554,6 +578,7 @@
 {/snippet}
 {#snippet settingControl(id: SettingId)}
 {#if id === 'language'}{@render languageControl()}
+{:else if id === 'sound'}{@render soundControl()}
 {:else if id === 'profiles'}{@render profilesControl()}
 {:else if id === 'quality'}{@render qualityControl()}
 {:else if id === 'folder'}{@render folderControl()}
@@ -774,10 +799,10 @@
                   <span class="row-desc">{$language === 'vi' ? 'Xử lý cục bộ 100%, không thu thập dữ liệu cá nhân hay telemetry.' : '100% local processing, zero telemetry or personal data tracking.'}</span>
                 </div>
                 <div class="legal-links">
-                  <button type="button" class="btn-subtle" on:click={() => openLink('https://github.com/rainaku/Vertex/blob/main/TERMS_OF_SERVICE.md')}>
+                  <button type="button" class="btn-subtle" on:click={() => openLink('https://github.com/rainaku/Vertex/blob/main/docs/TERMS_OF_SERVICE.md')}>
                     <span>{$language === 'vi' ? 'Điều khoản' : 'Terms'}</span>
                   </button>
-                  <button type="button" class="btn-subtle" on:click={() => openLink('https://github.com/rainaku/Vertex/blob/main/PRIVACY_POLICY.md')}>
+                  <button type="button" class="btn-subtle" on:click={() => openLink('https://github.com/rainaku/Vertex/blob/main/docs/PRIVACY_POLICY.md')}>
                     <span>{$language === 'vi' ? 'Bảo mật' : 'Privacy'}</span>
                   </button>
                 </div>

@@ -5,7 +5,7 @@ use tauri::{
 
 const LABEL: &str = "tray-menu";
 const WIDTH: f64 = 248.0;
-const HEIGHT: f64 = 122.0;
+const HEIGHT: f64 = 132.0;
 
 #[derive(Clone, serde::Serialize)]
 pub struct TrayState {

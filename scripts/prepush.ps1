@@ -1,7 +1,7 @@
 param([switch]$FixFormat, [switch]$SkipAudit)
 
 $ErrorActionPreference = 'Stop'
-$WorkspaceRoot = $PSScriptRoot
+$WorkspaceRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $FrontendDir = Join-Path $WorkspaceRoot 'frontend'
 $vertexExitCode = 0
 

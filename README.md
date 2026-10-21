@@ -134,8 +134,8 @@ Prerequisites: Rust (latest stable toolchain), Node.js 18+.
 
 Vertex is built to be local-first and transparent about system access:
 
-- **[Terms of Service](TERMS_OF_SERVICE.md)** ([Tiếng Việt](TERMS_OF_SERVICE_VI.md)): Guidelines on using official releases, open-source rights under Apache 2.0, local conversion safety, and update signature integrity.
-- **[Privacy Policy](PRIVACY_POLICY.md)** ([Tiếng Việt](PRIVACY_POLICY_VI.md)): Detailed documentation of local device access (file conversion, Shift key and mouse drag hooks) and network requests (update checking via GitHub Releases). Vertex does not collect personal data, telemetry, or user analytics.
+- **[Terms of Service](docs/TERMS_OF_SERVICE.md)** ([Tiếng Việt](docs/TERMS_OF_SERVICE_VI.md)): Guidelines on using official releases, open-source rights under Apache 2.0, local conversion safety, and update signature integrity.
+- **[Privacy Policy](docs/PRIVACY_POLICY.md)** ([Tiếng Việt](docs/PRIVACY_POLICY_VI.md)): Detailed documentation of local device access (file conversion, Shift key and mouse drag hooks) and network requests (update checking via GitHub Releases). Vertex does not collect personal data, telemetry, or user analytics.
 
 <div id="license"></div>
 
@@ -146,8 +146,8 @@ Vertex is licensed under the Apache License 2.0. See [LICENSE](LICENSE) for deta
 <p align="center">
   Made by <a href="https://rainaku.id.vn">rainaku</a> ·
   <a href="https://github.com/rainaku/Vertex">GitHub</a> ·
-  <a href="TERMS_OF_SERVICE.md">Terms of Service</a> ·
-  <a href="PRIVACY_POLICY.md">Privacy Policy</a> ·
+  <a href="docs/TERMS_OF_SERVICE.md">Terms of Service</a> ·
+  <a href="docs/PRIVACY_POLICY.md">Privacy Policy</a> ·
   <a href="https://www.facebook.com/rain.107/">Facebook</a> ·
   <a href="https://www.paypal.me/PhuocLe678">Donate</a>
 </p>

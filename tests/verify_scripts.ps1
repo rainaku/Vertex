@@ -2,7 +2,7 @@ $ErrorActionPreference = 'Stop'
 $WorkspaceRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 . (Join-Path $WorkspaceRoot 'scripts\BuildTools.ps1')
 
-foreach ($name in @('b.ps1', 'r.ps1', 'prepush.ps1', 'scripts/BuildTools.ps1', 'scripts/New-UpdateSigningKey.ps1', 'scripts/Sign-UpdateManifest.ps1')) {
+foreach ($name in @('b.ps1', 'r.ps1', 'scripts/prepush.ps1', 'scripts/BuildTools.ps1', 'scripts/New-UpdateSigningKey.ps1', 'scripts/Sign-UpdateManifest.ps1')) {
     $tokens = $null
     $errors = $null
     [void][Management.Automation.Language.Parser]::ParseFile((Join-Path $WorkspaceRoot $name), [ref]$tokens, [ref]$errors)

@@ -69,7 +69,7 @@
 - `cargo clippy --workspace --all-targets --locked -- -D warnings`, `cargo fmt --all -- --check`.
 - `npm run check`, `npm test`, `npm run build`, `npm audit --audit-level=high` (không phát hiện lỗ hổng).
 - `tests/verify_scripts.ps1` chạy bằng PowerShell 5.1 và 7: parser, workspace guard, cleanup và TCP probe.
-- `prepush.ps1 -SkipAudit` chạy thành công từ thư mục ngoài repo. CI cũng chạy các bài kiểm tra mới, dùng Node 24 phù hợp toolchain hiện tại.
+- `scripts/prepush.ps1 -SkipAudit` chạy thành công từ thư mục ngoài repo. CI cũng chạy các bài kiểm tra mới, dùng Node 24 phù hợp toolchain hiện tại.
 
 ## Sửa lỗi thả file lên wheel nhưng không chuyển đổi
 

@@ -85,8 +85,8 @@ it('opens project, website, and legal links through the desktop link handler', a
   await fireEvent.click(view.getByRole('button', { name: 'About' }));
   for (const [name, url] of [
     ['Open GitHub', 'https://github.com/rainaku/Vertex'],
-    ['Terms', 'https://github.com/rainaku/Vertex/blob/main/TERMS_OF_SERVICE.md'],
-    ['Privacy', 'https://github.com/rainaku/Vertex/blob/main/PRIVACY_POLICY.md'],
+    ['Terms', 'https://github.com/rainaku/Vertex/blob/main/docs/TERMS_OF_SERVICE.md'],
+    ['Privacy', 'https://github.com/rainaku/Vertex/blob/main/docs/PRIVACY_POLICY.md'],
   ]) {
     await fireEvent.click(view.getByRole('button', { name }));
     expect(openReleasePage).toHaveBeenLastCalledWith(url);
@@ -124,6 +124,18 @@ it('searches autostart without showing an empty result and clears search on Esca
   await fireEvent.keyDown(window, { key: 'Escape' });
   expect(view.getByRole('heading', { name: 'General' })).toBeTruthy();
   expect(view.onClose).not.toHaveBeenCalled();
+});
+
+it('toggles and persists the sound effects preference immediately', async () => {
+  const view = mount();
+  const checkbox = view.getByRole('checkbox', { name: 'Sound Effects' }) as HTMLInputElement;
+  expect(checkbox.checked).toBe(true);
+  await fireEvent.click(checkbox);
+  expect(checkbox.checked).toBe(false);
+  expect(localStorage.getItem('vertex.sound-enabled.v1')).toBe('false');
+  await fireEvent.click(checkbox);
+  expect(checkbox.checked).toBe(true);
+  expect(localStorage.getItem('vertex.sound-enabled.v1')).toBe('true');
 });
 
 it('keeps update actions connected to their handlers', async () => {

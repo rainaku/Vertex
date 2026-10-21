@@ -4,6 +4,7 @@
   import RadialWheel from './lib/RadialWheel.svelte';
   import OptionsPanel from './lib/OptionsPanel.svelte';
   import { defaultOptions, loadOptions } from './lib/settings';
+  import { playSound } from './lib/sound';
   import { runConversionBatch } from './lib/conversion-batch';
   import { checkForUpdates } from './lib/updater';
   import {
@@ -177,6 +178,7 @@
     if (status === 'converting' || status === 'done') return;
     page = (page + 1) % totalPages;
     updatePagedFormats();
+    playSound('page_turn');
   }
 
   // ─── Wheel visibility ────────────────────────────────────────────────────────
@@ -186,6 +188,7 @@
     cancelClose();
     if (wheelVisible) return;
     wheelVisible = true;
+    playSound('wheel_open');
     // Disable passthrough so user can interact with the wheel
     await setWindowPassthrough(false);
   }
@@ -200,6 +203,7 @@
   async function hideWheel() {
     if (settingsVisible) return;
     if (wheelClosing) return;
+    const wasVisible = wheelVisible;
     dragRevision++;
     dragCancelled = true;
     dragInsideWebview = false;
@@ -211,6 +215,7 @@
     activeIndex = -1;
     isDragging = false;
     clearDragDwell();
+    if (wasVisible && status === 'idle') playSound('wheel_close');
     // Let Svelte apply the closing styles before collecting their transitions.
     await tick();
     if (revision !== visibilityRevision) return;
@@ -276,6 +281,7 @@
       activeIndex = -1;
       conversionError = String(error);
       status = 'error';
+      playSound('convert_error');
       return false;
     }
   }
@@ -296,6 +302,7 @@
     stopping = false;
     cancelClose();
     wheelVisible = true;
+    playSound('convert_start');
     try {
       await setConvertingState(true);
       const result = await runConversionBatch(paths, {
@@ -310,6 +317,7 @@
       if (result.failures.length) {
         conversionError = result.failures.map(({ path, error }) => `${path.split(/[/\\]/).pop()}: ${error}`).join('\n');
         status = 'error';
+        playSound('convert_error');
         // Keep errors visible until the user dismisses or retries.
       } else if (result.cancelled) {
         status = 'idle';
@@ -320,6 +328,7 @@
       } else {
         status = 'done';
         progress = 1;
+        playSound('convert_done');
         statusTimer = setTimeout(() => {
           status = 'idle';
           convertingIndex = -1;
@@ -329,6 +338,7 @@
     } catch (error) {
       conversionError = String(error);
       status = 'error';
+      playSound('convert_error');
     } finally {
       activeJobId = null;
       stopping = false;
@@ -466,7 +476,11 @@
             const cssX = pos.x / dpr;
             const cssY = pos.y / dpr;
             const hit = hitTestClient(cssX, cssY, getOpenWheelRect());
-            activeIndex = hit.type === 'petal' ? hit.index : -1;
+            const nextIndex = hit.type === 'petal' ? hit.index : -1;
+            if (nextIndex !== activeIndex) {
+              activeIndex = nextIndex;
+              if (nextIndex >= 0) playSound('petal_hover');
+            }
 
             if (hit.type === 'petal' && hit.index === 7 && hasMorePages) {
               triggerDragDwell();
@@ -569,7 +583,12 @@
       {page}
       {totalPages}
       onSelectFormat={(fmt, index) => startConversion(fmt, index)}
-      onHoverChange={(idx) => activeIndex = idx}
+      onHoverChange={(idx) => {
+        if (idx !== activeIndex) {
+          activeIndex = idx;
+          if (idx >= 0) playSound('petal_hover');
+        }
+      }}
       onNextPage={handleNextPage}
       {stopping}
       onCenterClick={() => { if (activeJobId) void stopConversion(); else void openSettings(); }}

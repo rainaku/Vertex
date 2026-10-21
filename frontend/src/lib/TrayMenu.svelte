@@ -99,11 +99,12 @@
 </div>
 
 <style>
-  .tray-panel { width: min(248px, 100%); height: 122px; max-height: 100%; padding: 6px; overflow: hidden; background: #000000; color: #f4f4f5; border: 0; border-radius: 12px; font-family: var(--font-family); font-size: 13px; font-weight: 700; }
-  header { display: flex; align-items: center; height: 27px; gap: 8px; padding: 0 9px; color: #909298; font-size: 11px; }
+  .tray-panel { display: flex; flex-direction: column; width: min(248px, 100%); height: 132px; max-height: 100%; padding: 10px 8px 8px; overflow: hidden; background: #000000; color: #f4f4f5; border: 1px solid #ffffff12; border-radius: 12px; font-family: var(--font-family); font-size: 13px; font-weight: 700; }
+  header { display: flex; align-items: center; height: 26px; gap: 8px; padding: 0 10px 4px; margin-bottom: 2px; color: #909298; font-size: 11px; line-height: 1; }
   .version { margin-left: auto; font-variant-numeric: tabular-nums; }
   .error { color: #fca5a5; font-size: 10px; }
-  button { display: flex; width: 100%; height: 36px; align-items: center; gap: 10px; border: 0; border-radius: 7px; padding: 0 9px; background: transparent; color: #a8abb2; font: inherit; text-align: left; cursor: pointer; }
+  .actions { display: flex; flex-direction: column; flex: 1; justify-content: center; }
+  button { display: flex; width: 100%; height: 36px; align-items: center; gap: 10px; border: 0; border-radius: 8px; padding: 0 10px; background: transparent; color: #a8abb2; font: inherit; text-align: left; cursor: pointer; }
   .label { flex: 1; transition: color 120ms, text-shadow 120ms; }
   .icon { display: flex; flex: 0 0 17px; align-items: center; justify-content: center; transition: transform 220ms ease, color 120ms; }
   button:hover:not(:disabled) .label, button:focus-visible .label { color: #ffffff; text-shadow: 0 0 8px #ffffff60; }
