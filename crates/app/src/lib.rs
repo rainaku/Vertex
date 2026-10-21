@@ -3,8 +3,8 @@ pub mod drag_detector;
 #[cfg(any(windows, test))]
 mod drag_gesture;
 mod logging;
-mod wheel_window;
 mod tray_menu;
+mod wheel_window;
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -117,6 +117,14 @@ pub fn run() {
             restore_wheel_window,
         ])
         .setup(|app| {
+            #[cfg(debug_assertions)]
+            {
+                use tauri_plugin_autostart::ManagerExt;
+                if let Ok(true) = app.autolaunch().is_enabled() {
+                    let _ = app.autolaunch().disable();
+                }
+            }
+
             tray_menu::setup(app)?;
 
             // Hidden native windows already let mouse input reach the desktop.
