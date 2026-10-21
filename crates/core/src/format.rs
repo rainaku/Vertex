@@ -411,11 +411,72 @@ impl Format {
         for (dst, src) in buf.iter_mut().zip(trimmed.as_bytes()) {
             *dst = src.to_ascii_lowercase();
         }
-        let cleaned = std::str::from_utf8(&buf[..trimmed.len()]).ok()?;
-        Self::ALL
-            .iter()
-            .copied()
-            .find(|format| format.extension() == cleaned || format.aliases().contains(&cleaned))
+        let cleaned = &buf[..trimmed.len()];
+        match cleaned {
+            b"png" => Some(Format::Png),
+            b"jpg" | b"jpeg" | b"jpe" | b"jfif" => Some(Format::Jpg),
+            b"webp" => Some(Format::Webp),
+            b"avif" => Some(Format::Avif),
+            b"heic" | b"heif" => Some(Format::Heic),
+            b"tiff" | b"tif" => Some(Format::Tiff),
+            b"bmp" | b"dib" => Some(Format::Bmp),
+            b"gif" => Some(Format::Gif),
+            b"ico" => Some(Format::Ico),
+            b"svg" => Some(Format::Svg),
+            b"pdf" => Some(Format::Pdf),
+            b"doc" => Some(Format::Doc),
+            b"docx" => Some(Format::Docx),
+            b"docm" => Some(Format::Docm),
+            b"dot" => Some(Format::Dot),
+            b"dotx" => Some(Format::Dotx),
+            b"dotm" => Some(Format::Dotm),
+            b"odt" => Some(Format::Odt),
+            b"ott" => Some(Format::Ott),
+            b"fodt" => Some(Format::Fodt),
+            b"sxw" => Some(Format::Sxw),
+            b"wps" => Some(Format::Wps),
+            b"wpd" => Some(Format::Wpd),
+            b"wri" => Some(Format::Wri),
+            b"rtf" => Some(Format::Rtf),
+            b"txt" | b"text" | b"log" | b"nfo" | b"asc" => Some(Format::Txt),
+            b"md" | b"markdown" | b"mdown" | b"mkd" | b"mdwn" => Some(Format::Md),
+            b"html" | b"htm" | b"xhtml" | b"xht" => Some(Format::Html),
+            b"xlsx" => Some(Format::Xlsx),
+            b"xls" => Some(Format::Xls),
+            b"ods" => Some(Format::Ods),
+            b"csv" => Some(Format::Csv),
+            b"tsv" => Some(Format::Tsv),
+            b"json" => Some(Format::Json),
+            b"yaml" | b"yml" => Some(Format::Yaml),
+            b"toml" => Some(Format::Toml),
+            b"xml" => Some(Format::Xml),
+            b"pptx" => Some(Format::Pptx),
+            b"ppt" => Some(Format::Ppt),
+            b"odp" => Some(Format::Odp),
+            b"mp3" => Some(Format::Mp3),
+            b"wav" => Some(Format::Wav),
+            b"flac" => Some(Format::Flac),
+            b"aac" => Some(Format::Aac),
+            b"ogg" | b"oga" => Some(Format::Ogg),
+            b"m4a" => Some(Format::M4a),
+            b"opus" => Some(Format::Opus),
+            b"aiff" | b"aif" => Some(Format::Aiff),
+            b"wma" => Some(Format::Wma),
+            b"mp4" | b"m4v" => Some(Format::Mp4),
+            b"mov" => Some(Format::Mov),
+            b"mkv" => Some(Format::Mkv),
+            b"avi" => Some(Format::Avi),
+            b"webm" => Some(Format::Webm),
+            b"wmv" => Some(Format::Wmv),
+            b"flv" => Some(Format::Flv),
+            b"3gp" | b"3gpp" | b"3g2" => Some(Format::ThreeGp),
+            b"ts" | b"m2ts" => Some(Format::Ts),
+            b"zip" => Some(Format::Zip),
+            b"tar.gz" | b"tgz" => Some(Format::TarGz),
+            b"7z" => Some(Format::SevenZ),
+            b"gz" => Some(Format::Gz),
+            _ => None,
+        }
     }
 
     pub fn from_mime(mime: &str) -> Option<Self> {

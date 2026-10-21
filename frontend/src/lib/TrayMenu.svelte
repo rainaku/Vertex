@@ -5,6 +5,7 @@
   import { getCurrentWindow } from '@tauri-apps/api/window';
   import GearSixIcon from 'phosphor-svelte/lib/GearSixIcon';
   import PowerIcon from 'phosphor-svelte/lib/PowerIcon';
+  import './theme';
 
   type TrayState = { language: 'vi' | 'en'; version: string; converting: boolean };
   let state: TrayState = { language: 'vi', version: '', converting: false };
@@ -43,6 +44,7 @@
   }
 
   function keydown(event: KeyboardEvent) {
+    if (!['Escape', 'ArrowDown', 'ArrowUp', 'Home', 'End', 'Tab'].includes(event.key)) return;
     if (event.key === 'Escape') { event.preventDefault(); void close(); return; }
     const buttons = Array.from(menu.querySelectorAll<HTMLButtonElement>('button:not(:disabled)'));
     if (!buttons.length) return;
@@ -120,5 +122,41 @@
   @media (prefers-reduced-motion: reduce) {
     .label, .icon { transition: none; }
     button:hover:not(:disabled) .icon, button:focus-visible .icon { animation: none; transform: none; }
+  }
+  :global(:root[data-theme='light']) .tray-panel {
+    background: #f4f4f5;
+    color: #18181b;
+    border-color: #d4d4d8;
+  }
+  :global(:root[data-theme='light']) header {
+    color: #71717a;
+  }
+  :global(:root[data-theme='light']) button {
+    color: #3f3f46;
+  }
+  :global(:root[data-theme='light']) button:hover:not(:disabled) {
+    background: #e4e4e7;
+  }
+  :global(:root[data-theme='light']) button:hover:not(:disabled) .label,
+  :global(:root[data-theme='light']) button:focus-visible .label {
+    color: #18181b;
+    text-shadow: none;
+  }
+  :global(:root[data-theme='light']) button:hover:not(:disabled) .gear,
+  :global(:root[data-theme='light']) button:focus-visible .gear {
+    color: #18181b;
+  }
+  :global(:root[data-theme='light']) .quit {
+    color: #dc2626;
+  }
+  :global(:root[data-theme='light']) .quit:hover:not(:disabled) .label,
+  :global(:root[data-theme='light']) .quit:focus-visible .label,
+  :global(:root[data-theme='light']) .quit:hover:not(:disabled) .power,
+  :global(:root[data-theme='light']) .quit:focus-visible .power {
+    color: #b91c1c;
+    text-shadow: none;
+  }
+  :global(:root[data-theme='light']) .separator {
+    background: #d4d4d8;
   }
 </style>

@@ -9,7 +9,11 @@ const MAX_TEXT_SIZE: u64 = 64 * 1024 * 1024;
 pub(super) fn read_unicode(path: &Path, cancel: &CancelToken) -> Result<String> {
     cancel.check()?;
     let file = std::fs::File::open(path).map_err(|e| io_error(path, e))?;
-    let mut bytes = Vec::new();
+    let cap = file
+        .metadata()
+        .map(|m| m.len().min(MAX_TEXT_SIZE + 1) as usize)
+        .unwrap_or(0);
+    let mut bytes = Vec::with_capacity(cap);
     file.take(MAX_TEXT_SIZE + 1)
         .read_to_end(&mut bytes)
         .map_err(|e| io_error(path, e))?;
@@ -19,10 +23,10 @@ pub(super) fn read_unicode(path: &Path, cancel: &CancelToken) -> Result<String> 
             "Text input is limited to 64 MiB per conversion".into(),
         ));
     }
-    decode_unicode(&bytes)
+    decode_unicode(bytes)
 }
 
-fn decode_unicode(bytes: &[u8]) -> Result<String> {
+fn decode_unicode(bytes: Vec<u8>) -> Result<String> {
     let invalid = || {
         VertexError::Encoding(
         "Không đọc được mã hóa văn bản. Hãy lưu file bằng UTF-8 hoặc UTF-16 có BOM. / Invalid text encoding; save as UTF-8 or UTF-16 with a BOM.".into(),
@@ -32,33 +36,43 @@ fn decode_unicode(bytes: &[u8]) -> Result<String> {
     if bytes.starts_with(&[0xff, 0xfe, 0, 0]) || bytes.starts_with(&[0, 0, 0xfe, 0xff]) {
         return Err(invalid());
     }
-    let text = if bytes.starts_with(&[0xff, 0xfe]) || bytes.starts_with(&[0xfe, 0xff]) {
+    if bytes.starts_with(&[0xff, 0xfe]) || bytes.starts_with(&[0xfe, 0xff]) {
         let little_endian = bytes[0] == 0xff;
         let (pairs, remainder) = bytes[2..].as_chunks::<2>();
         if !remainder.is_empty() {
             return Err(invalid());
         }
-        let words = pairs
-            .iter()
-            .copied()
-            .map(if little_endian {
-                u16::from_le_bytes
-            } else {
-                u16::from_be_bytes
-            })
-            .collect::<Vec<_>>();
-        String::from_utf16(&words).map_err(|_| invalid())?
+        let mut text = String::with_capacity(pairs.len());
+        if little_endian {
+            for r in char::decode_utf16(pairs.iter().copied().map(u16::from_le_bytes)) {
+                let c = r.map_err(|_| invalid())?;
+                if c == '\0' {
+                    return Err(invalid());
+                }
+                text.push(c);
+            }
+        } else {
+            for r in char::decode_utf16(pairs.iter().copied().map(u16::from_be_bytes)) {
+                let c = r.map_err(|_| invalid())?;
+                if c == '\0' {
+                    return Err(invalid());
+                }
+                text.push(c);
+            }
+        }
+        Ok(text)
     } else {
-        std::str::from_utf8(bytes.strip_prefix(&[0xef, 0xbb, 0xbf]).unwrap_or(bytes))
-            .map_err(|_| invalid())?
-            .to_owned()
-    };
-    // NULs usually indicate BOM-less UTF-16 or binary input. Don't silently emit
-    // corrupted text that another converter might then discard.
-    if text.contains('\0') {
-        return Err(invalid());
+        // NULs usually indicate BOM-less UTF-16 or binary input. Don't silently emit
+        // corrupted text that another converter might then discard.
+        if bytes.contains(&0) {
+            return Err(invalid());
+        }
+        let mut text = String::from_utf8(bytes).map_err(|_| invalid())?;
+        if text.starts_with('\u{feff}') {
+            text.drain(..3);
+        }
+        Ok(text)
     }
-    Ok(text)
 }
 
 #[cfg(test)]
@@ -68,10 +82,10 @@ mod tests {
     #[test]
     fn unicode_encodings_retain_vietnamese_whitespace_and_supplementary_characters() {
         let text = "\r\nTiếng Việt\t  có dấu 😀\r\n\r\n";
-        assert_eq!(decode_unicode(text.as_bytes()).unwrap(), text);
+        assert_eq!(decode_unicode(text.as_bytes().to_vec()).unwrap(), text);
         let mut utf8 = vec![0xef, 0xbb, 0xbf];
         utf8.extend_from_slice(text.as_bytes());
-        assert_eq!(decode_unicode(&utf8).unwrap(), text);
+        assert_eq!(decode_unicode(utf8).unwrap(), text);
         for little in [true, false] {
             let mut bytes = if little {
                 vec![0xff, 0xfe]
@@ -85,7 +99,7 @@ mod tests {
                     word.to_be_bytes()
                 });
             }
-            assert_eq!(decode_unicode(&bytes).unwrap(), text);
+            assert_eq!(decode_unicode(bytes).unwrap(), text);
         }
     }
 
@@ -98,7 +112,7 @@ mod tests {
             &[0xff, 0xfe, 0, 0, 65, 0, 0, 0],
             b"A\0B\0",
         ] {
-            assert!(decode_unicode(bytes).is_err());
+            assert!(decode_unicode(bytes.to_vec()).is_err());
         }
     }
 }

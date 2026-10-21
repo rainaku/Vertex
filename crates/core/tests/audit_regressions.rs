@@ -167,7 +167,7 @@ fn direct_image_conversion_rejects_same_file_and_cleans_cancelled_output() {
     let input = dir.path().join("source.png");
     image::RgbImage::new(32, 32).save(&input).unwrap();
     let bytes = std::fs::read(&input).unwrap();
-    let converter = PureRustImageConverter::default();
+    let converter = PureRustImageConverter;
     let cancel = CancelToken::new();
     assert!(converter
         .convert(&input, &input, &Options::default(), &|_| {}, &cancel)

@@ -2,9 +2,10 @@
   import { onMount, onDestroy, tick } from 'svelte';
   import { t, language, syncNativeLanguage } from './lib/i18n';
   import RadialWheel from './lib/RadialWheel.svelte';
-  import OptionsPanel from './lib/OptionsPanel.svelte';
+  import type OptionsPanel from './lib/OptionsPanel.svelte';
   import { defaultOptions, loadOptions } from './lib/settings';
   import { playSound } from './lib/sound';
+  import './lib/theme';
   import { runConversionBatch } from './lib/conversion-batch';
   import { checkForUpdates } from './lib/updater';
   import {
@@ -86,6 +87,7 @@
     if (status === 'converting' || settingsVisible) return;
     clearDragDwell();
     cancelClose();
+    cachedWheelRect = null;
     dragRevision++;
     dragCancelled = true;
     dragInsideWebview = false;
@@ -108,10 +110,13 @@
   // ─── Helpers ─────────────────────────────────────────────────────────────────
 
   const OPEN_WHEEL_SIZE = 520 * 0.55;
+  let cachedWheelRect: Pick<DOMRect, 'left' | 'top' | 'width' | 'height'> | null = null;
 
   function getOpenWheelRect(): Pick<DOMRect, 'left' | 'top' | 'width' | 'height'> {
+    if (wheelVisible && cachedWheelRect) return cachedWheelRect;
     const rect = wheelElement?.getBoundingClientRect();
     if (wheelVisible && rect && rect.width >= OPEN_WHEEL_SIZE && rect.height >= OPEN_WHEEL_SIZE) {
+      cachedWheelRect = rect;
       return rect;
     }
     const cx = rect && rect.width > 0 ? rect.left + rect.width / 2 : window.innerWidth / 2;
@@ -187,6 +192,7 @@
     if (settingsVisible) return;
     cancelClose();
     if (wheelVisible) return;
+    cachedWheelRect = null;
     wheelVisible = true;
     playSound('wheel_open');
     // Disable passthrough so user can interact with the wheel
@@ -204,6 +210,7 @@
     if (settingsVisible) return;
     if (wheelClosing) return;
     const wasVisible = wheelVisible;
+    cachedWheelRect = null;
     dragRevision++;
     dragCancelled = true;
     dragInsideWebview = false;
@@ -381,7 +388,10 @@
         void cancelJob(payload.job_id).catch(error => console.warn('Cancel failed:', error));
         return;
       }
-      if (payload.status === 'converting') progress = (batchCompleted + payload.progress) / batchTotal;
+      if (payload.status === 'converting') {
+        const nextProgress = (batchCompleted + payload.progress) / batchTotal;
+        if (Math.abs(nextProgress - progress) >= 0.002) progress = nextProgress;
+      }
     });
 
     if (destroyed) return;
@@ -397,6 +407,7 @@
 
         await listen<{ generation: number; focus: boolean }>('wheel_shown', (event) => {
           nativeGeneration = event.payload.generation;
+          cachedWheelRect = null;
           dragRevision++;
           dragCancelled = false;
           cancelClose();
@@ -416,6 +427,7 @@
         // 1. Listen for global Shift+Drag events from Rust background thread
         await listen('shift_drag_start', () => {
           if (settingsVisible) return;
+          cachedWheelRect = null;
           dragRevision++;
           fileRevision++;
           loadingFiles = null;
@@ -561,6 +573,23 @@
     cancelClose();
     window.removeEventListener('keydown', handleKeyDown);
   });
+  $: centerLabel = currentFilePaths.length > 1 ? `${$t("Tệp")} (${currentFilePaths.length})` : sourceFormatLabel;
+
+  function handleSelectFormat(fmt: TargetFormatInfo, index: number) {
+    void startConversion(fmt, index);
+  }
+
+  function handleHoverChange(idx: number) {
+    if (idx !== activeIndex) {
+      activeIndex = idx;
+      if (idx >= 0) playSound('petal_hover');
+    }
+  }
+
+  function handleCenterClick() {
+    if (activeJobId) void stopConversion();
+    else void openSettings();
+  }
 </script>
 
 <!-- 
@@ -578,20 +607,15 @@
       {progress}
       {status}
       {sourceFormat}
-      centerLabel={currentFilePaths.length > 1 ? `${$t("Tệp")} (${currentFilePaths.length})` : sourceFormatLabel}
+      {centerLabel}
       {hasMorePages}
       {page}
       {totalPages}
-      onSelectFormat={(fmt, index) => startConversion(fmt, index)}
-      onHoverChange={(idx) => {
-        if (idx !== activeIndex) {
-          activeIndex = idx;
-          if (idx >= 0) playSound('petal_hover');
-        }
-      }}
+      onSelectFormat={handleSelectFormat}
+      onHoverChange={handleHoverChange}
       onNextPage={handleNextPage}
       {stopping}
-      onCenterClick={() => { if (activeJobId) void stopConversion(); else void openSettings(); }}
+      onCenterClick={handleCenterClick}
     />
   </div>
 
@@ -606,7 +630,8 @@
 </main>
 
 {#if settingsVisible}
-  <OptionsPanel
+  {#await import('./lib/OptionsPanel.svelte') then panel}
+  <svelte:component this={panel.default}
     bind:this={optionsPanelRef}
     {options}
     onClose={closeSettings}
@@ -614,6 +639,7 @@
       options = value;
     }}
   />
+  {/await}
 {/if}
 
 <style>
@@ -668,10 +694,10 @@
     align-items: center;
     gap: 8px;
     padding: 8px 18px;
-    background: #000000;
+    background: var(--toast-bg, #000000);
     border: none;
     border-radius: 9999px;
-    color: #ffffff;
+    color: var(--toast-text, #ffffff);
     font-family: var(--font-family);
     font-size: 13px;
     font-weight: 600;
@@ -685,14 +711,14 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    background: #ffffff;
+    background: var(--hint-key-bg, #ffffff);
     border: none;
     border-radius: 6px;
     padding: 2px 8px;
     font-size: 12px;
     font-weight: 700;
     letter-spacing: 0.5px;
-    color: #000000;
+    color: var(--hint-key-text, #000000);
   }
 
   @keyframes hintSlideUp {

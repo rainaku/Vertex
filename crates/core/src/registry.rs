@@ -19,7 +19,7 @@ pub struct Registry {
 impl Default for Registry {
     fn default() -> Self {
         let mut reg = Self::new();
-        reg.register(Arc::new(PureRustImageConverter::default()));
+        reg.register(Arc::new(PureRustImageConverter));
         reg.register(Arc::new(FfmpegConverter::default()));
         reg.register(Arc::new(crate::converters::data::DataConverter));
         reg.register(Arc::new(crate::converters::data::TextConverter));
@@ -54,26 +54,33 @@ impl Registry {
     }
 
     pub(crate) fn declared_targets(&self, from: Format) -> Vec<Format> {
+        let preferred = from.category();
         let mut targets: Vec<_> = self
             .converters
             .iter()
             .filter(|c| c.sources().contains(&from))
             .flat_map(|c| c.targets(from))
-            .map(|f| (f, Availability::Ok))
             .collect();
-        sort_targets_by_affinity(&mut targets, from.category());
-        targets.dedup_by_key(|(f, _)| *f);
-        targets.into_iter().map(|(f, _)| f).collect()
+        targets.sort_unstable_by_key(|&f| target_affinity_key(f, preferred));
+        targets.dedup();
+        targets
     }
 
-    /// Find all target formats available from a source format, with their availability.
-    pub fn available_targets(&self, from: Format) -> Vec<(Format, Availability)> {
+    fn available_target_map(&self, from: Format) -> HashMap<Format, Availability> {
         let mut target_map: HashMap<Format, Availability> = HashMap::new();
 
         for conv in &self.converters {
             if conv.sources().contains(&from) {
+                let targets = conv.targets(from);
+                if targets.is_empty()
+                    || targets
+                        .iter()
+                        .all(|t| target_map.get(t).is_some_and(Availability::is_ok))
+                {
+                    continue;
+                }
                 let avail = conv.available();
-                for target in conv.targets(from).into_iter() {
+                for target in targets {
                     // If we already have a target, keep the one that is available (Ok)
                     target_map
                         .entry(target)
@@ -87,8 +94,14 @@ impl Registry {
             }
         }
 
+        target_map
+    }
+
+    /// Find all target formats available from a source format, with their availability.
+    pub fn available_targets(&self, from: Format) -> Vec<(Format, Availability)> {
         // Return sorted by category affinity and format priority
-        let mut list: Vec<(Format, Availability)> = target_map.into_iter().collect();
+        let mut list: Vec<(Format, Availability)> =
+            self.available_target_map(from).into_iter().collect();
         sort_targets_by_affinity(&mut list, from.category());
         list
     }
@@ -99,8 +112,7 @@ impl Registry {
             return Vec::new();
         }
 
-        let first_targets = self.available_targets(formats[0]);
-        let mut common: HashMap<Format, Availability> = first_targets.into_iter().collect();
+        let mut common = self.available_target_map(formats[0]);
         let mut seen = HashSet::from([formats[0]]);
 
         for &fmt in &formats[1..] {
@@ -110,8 +122,7 @@ impl Registry {
             if !seen.insert(fmt) {
                 continue;
             }
-            let next_targets: HashMap<Format, Availability> =
-                self.available_targets(fmt).into_iter().collect();
+            let next_targets = self.available_target_map(fmt);
 
             common.retain(|target, avail| {
                 if let Some(other_avail) = next_targets.get(target) {
@@ -154,34 +165,33 @@ impl Registry {
         cancel.check()?;
         let opts = opts.normalized();
         let from = detect_format(input)?;
-        let route = if let Some(conv) = self.find_converter(from, target) {
-            vec![(target, conv)]
-        } else {
-            for conv in &self.converters {
-                if conv.sources().contains(&from) && conv.targets(from).contains(&target) {
-                    if let Availability::Missing(reason) = conv.available() {
-                        return Err(VertexError::EngineMissing(reason));
+        let mut missing_reason = None;
+        let mut direct_conv = None;
+        for conv in &self.converters {
+            if conv.sources().contains(&from) && conv.targets(from).contains(&target) {
+                match conv.available() {
+                    Availability::Ok => {
+                        direct_conv = Some(Arc::clone(conv));
+                        break;
                     }
+                    Availability::Missing(reason) if missing_reason.is_none() => {
+                        missing_reason = Some(reason);
+                    }
+                    Availability::Missing(_) => {}
                 }
             }
-            if let Some(path) = self.find_path(from, target) {
-                path.into_iter()
-                    .map(|(a, b)| {
-                        self.find_converter(a, b)
-                            .map(|conv| (b, conv))
-                            .ok_or_else(|| {
-                                VertexError::EngineMissing(format!(
-                                    "Engine for {a} -> {b} disappeared"
-                                ))
-                            })
-                    })
-                    .collect::<Result<Vec<_>>>()?
-            } else {
-                return Err(VertexError::NoConversionRoute {
-                    from: from.to_string(),
-                    to: target.to_string(),
-                });
-            }
+        }
+        let route = if let Some(conv) = direct_conv {
+            vec![(target, conv)]
+        } else if let Some(reason) = missing_reason {
+            return Err(VertexError::EngineMissing(reason));
+        } else if let Some(path) = self.find_path(from, target) {
+            path
+        } else {
+            return Err(VertexError::NoConversionRoute {
+                from: from.to_string(),
+                to: target.to_string(),
+            });
         };
         let mut destination = resolve_target_path(input, target, &opts)?;
         let mut staged = crate::path_utils::stage_output(&destination)?;
@@ -256,12 +266,12 @@ impl Registry {
     }
 
     /// BFS stores predecessor edges rather than cloning a path per visit.
-    fn find_path(&self, from: Format, to: Format) -> Option<Vec<(Format, Format)>> {
+    fn find_path(&self, from: Format, to: Format) -> Option<Vec<(Format, Arc<dyn Converter>)>> {
         if from == to {
             return None;
         }
         let mut queue = VecDeque::from([from]);
-        let mut predecessors = HashMap::from([(from, from)]);
+        let mut predecessors: HashMap<Format, (Format, Arc<dyn Converter>)> = HashMap::new();
         let engines: Vec<_> = self
             .converters
             .iter()
@@ -273,16 +283,21 @@ impl Registry {
                     continue;
                 }
                 for next in conv.targets(current) {
+                    if next == from {
+                        continue;
+                    }
                     if let std::collections::hash_map::Entry::Vacant(entry) =
                         predecessors.entry(next)
                     {
-                        entry.insert(current);
+                        entry.insert((current, Arc::clone(conv)));
                         if next == to {
                             let mut path = Vec::new();
                             let mut at = to;
-                            while at != from {
-                                let previous = predecessors[&at];
-                                path.push((previous, at));
+                            while let Some((previous, edge_conv)) = predecessors.remove(&at) {
+                                path.push((at, edge_conv));
+                                if previous == from {
+                                    break;
+                                }
                                 at = previous;
                             }
                             path.reverse();
@@ -297,23 +312,28 @@ impl Registry {
     }
 }
 
+fn target_affinity_key(
+    format: Format,
+    preferred: crate::format::Category,
+) -> (u8, usize, &'static str) {
+    (
+        if format.category() == preferred {
+            0
+        } else if format.category() == crate::format::Category::Audio {
+            1
+        } else {
+            2
+        },
+        format_priority(format),
+        format.label(),
+    )
+}
+
 fn sort_targets_by_affinity(
     targets: &mut [(Format, Availability)],
     preferred: crate::format::Category,
 ) {
-    targets.sort_unstable_by_key(|(format, _)| {
-        (
-            if format.category() == preferred {
-                0
-            } else if format.category() == crate::format::Category::Audio {
-                1
-            } else {
-                2
-            },
-            format_priority(*format),
-            format.label(),
-        )
-    });
+    targets.sort_unstable_by_key(|(format, _)| target_affinity_key(*format, preferred));
 }
 
 fn format_priority(fmt: Format) -> usize {

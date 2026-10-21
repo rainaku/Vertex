@@ -9,7 +9,9 @@ export async function runConversionBatch(paths: readonly string[], hooks: {
   const outputs: string[] = [];
   const failures: { path: string; error: string }[] = [];
   let cancelled = false;
-  for (const [index, path] of [...paths].entries()) {
+  const snapshot = Array.from(paths);
+  for (let index = 0; index < snapshot.length; index += 1) {
+    const path = snapshot[index];
     if (hooks.stopped()) { cancelled = true; break; }
     try {
       const result = await hooks.convert(path, index);

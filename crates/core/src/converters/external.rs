@@ -177,6 +177,7 @@ pub fn run_tool(cmd: &mut Command, cancel: &CancelToken, timeout: Duration) -> R
         })?);
     }
     let started = Instant::now();
+    let mut poll_ms = 2u64;
     let status = loop {
         cancel.check()?;
         if let Some(status) = child
@@ -189,7 +190,8 @@ pub fn run_tool(cmd: &mut Command, cancel: &CancelToken, timeout: Duration) -> R
         if started.elapsed() >= timeout {
             return Err(VertexError::Encoding("Conversion tool timed out".into()));
         }
-        std::thread::sleep(Duration::from_millis(20));
+        std::thread::sleep(Duration::from_millis(poll_ms));
+        poll_ms = (poll_ms * 2).min(20);
     };
     log.rewind()
         .map_err(|e| VertexError::Encoding(e.to_string()))?;

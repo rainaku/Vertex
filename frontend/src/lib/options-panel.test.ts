@@ -138,6 +138,16 @@ it('toggles and persists the sound effects preference immediately', async () => 
   expect(localStorage.getItem('vertex.sound-enabled.v1')).toBe('true');
 });
 
+it('switches between Dark and Light mode and persists the theme', async () => {
+  const view = mount();
+  await fireEvent.click(view.getByRole('button', { name: 'Light' }));
+  expect(document.documentElement.dataset.theme).toBe('light');
+  expect(localStorage.getItem('vertex.theme.v1')).toBe('light');
+  await fireEvent.click(view.getByRole('button', { name: 'Dark' }));
+  expect(document.documentElement.dataset.theme).toBe('dark');
+  expect(localStorage.getItem('vertex.theme.v1')).toBe('dark');
+});
+
 it('keeps update actions connected to their handlers', async () => {
   const view = mount();
   await fireEvent.click(view.getByRole('button', { name: 'About' }));

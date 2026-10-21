@@ -36,9 +36,16 @@ fn acquire_single_instance_guard() -> Option<SingleInstanceGuard> {
         use windows_sys::Win32::Foundation::{CloseHandle, GetLastError, ERROR_ALREADY_EXISTS};
         use windows_sys::Win32::System::Threading::CreateMutexW;
 
-        let name: Vec<u16> = "Local\\VertexSingleInstanceMutex\0"
-            .encode_utf16()
-            .collect();
+        #[cfg(not(test))]
+        let name = "Local\\VertexSingleInstanceMutex\0";
+        // Tests must exercise exclusion without colliding with a running app
+        // or another test binary on the developer's desktop.
+        #[cfg(test)]
+        let name = format!(
+            "Local\\VertexSingleInstanceMutex-Test-{}\0",
+            std::process::id()
+        );
+        let name: Vec<u16> = name.encode_utf16().collect();
         let handle = CreateMutexW(std::ptr::null(), 1, name.as_ptr());
         if handle.is_null() {
             return None;
@@ -73,7 +80,7 @@ pub fn run() {
         registry: Arc::new(Registry::default()),
         conversion_slots: Arc::new(tokio::sync::Semaphore::new(
             std::thread::available_parallelism()
-                .map(|n| (n.get() / 4).clamp(1, 2))
+                .map(|n| (n.get() / 2).clamp(1, 4))
                 .unwrap_or(1),
         )),
         active_cancels: Arc::new(Mutex::new(HashMap::new())),

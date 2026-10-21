@@ -8,6 +8,33 @@ pub fn generation() -> u32 {
     GENERATION.load(Ordering::SeqCst)
 }
 
+pub fn is_native_configured(win: &WebviewWindow) -> bool {
+    #[cfg(target_os = "windows")]
+    unsafe {
+        use windows_sys::Win32::Foundation::{GetLastError, SetLastError};
+        use windows_sys::Win32::UI::WindowsAndMessaging::{
+            GetWindowLongW, GWL_EXSTYLE, WS_EX_APPWINDOW, WS_EX_LAYERED, WS_EX_TOOLWINDOW,
+            WS_EX_TRANSPARENT,
+        };
+        let Ok(hwnd) = win.hwnd() else {
+            return false;
+        };
+        SetLastError(0);
+        let style = GetWindowLongW(hwnd.0 as _, GWL_EXSTYLE);
+        if style == 0 && GetLastError() != 0 {
+            return false;
+        }
+        let style = style as u32;
+        (style & WS_EX_TOOLWINDOW) != 0
+            && (style & (WS_EX_APPWINDOW | WS_EX_TRANSPARENT | WS_EX_LAYERED)) == 0
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = win;
+        false
+    }
+}
+
 /// Apply before the first show: skipping the taskbar alone does not make the
 /// wheel a tool window, so shell/dock utilities can still treat it as an app.
 fn configure_native(window: &WebviewWindow) -> Result<(), String> {

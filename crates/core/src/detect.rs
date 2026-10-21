@@ -22,49 +22,42 @@ pub fn detect_format<P: AsRef<Path>>(path: P) -> Result<Format> {
     }
     let extension = Format::from_path_extension(path);
     let mut header = [0; 8192];
-    let count = read_prefix(&mut file, &mut header).map_err(io)?;
-    let mut bytes = &header[..count];
-    let mut payload = [0; 8192];
+    let mut count = read_prefix(&mut file, &mut header).map_err(io)?;
     let mut had_id3 = false;
-    if bytes.starts_with(b"ID3") && bytes.len() >= 10 && bytes[6..10].iter().all(|b| b & 0x80 == 0)
+    if header[..count].starts_with(b"ID3")
+        && count >= 10
+        && header[6..10].iter().all(|b| b & 0x80 == 0)
     {
         had_id3 = true;
-        let size = bytes[6..10]
+        let size = header[6..10]
             .iter()
             .fold(0u64, |n, b| (n << 7) | u64::from(*b));
-        let footer = if bytes[3] == 4 && bytes[5] & 0x10 != 0 {
+        let footer = if header[3] == 4 && header[5] & 0x10 != 0 {
             10
         } else {
             0
         };
         file.seek(SeekFrom::Start(10 + size + footer)).map_err(io)?;
-        let n = read_prefix(&mut file, &mut payload).map_err(io)?;
+        let n = read_prefix(&mut file, &mut header).map_err(io)?;
         if n > 0 {
-            bytes = &payload[..n];
+            count = n;
         }
     }
+    let bytes = &header[..count];
     if bytes.starts_with(b"PK\x03\x04") || bytes.starts_with(b"PK\x05\x06") {
-        file.rewind().map_err(io)?;
-        if let Ok(mut archive) = zip::ZipArchive::new(&mut file) {
-            if archive.index_for_name("word/document.xml").is_some() {
-                return Ok(word_package_format(&mut archive, extension));
-            }
-            for (name, format) in [
-                ("xl/workbook.xml", Format::Xlsx),
-                ("ppt/presentation.xml", Format::Pptx),
-            ] {
-                if archive.index_for_name(name).is_some() {
+        if !had_id3 && count < header.len() {
+            if let Ok(mut archive) = zip::ZipArchive::new(std::io::Cursor::new(bytes)) {
+                if let Some(format) = inspect_zip_archive(&mut archive, extension) {
                     return Ok(format);
                 }
             }
-            if let Ok(entry) = archive.by_name("mimetype") {
-                let mut mime = String::new();
-                if entry.take(256).read_to_string(&mut mime).is_ok() {
-                    if let Some(format) = Format::from_mime(mime.trim()) {
-                        return Ok(format);
-                    }
+        } else {
+            file.rewind().map_err(io)?;
+            if let Ok(mut archive) = zip::ZipArchive::new(BufReader::new(&mut file)) {
+                if let Some(format) = inspect_zip_archive(&mut archive, extension) {
+                    return Ok(format);
                 }
-            };
+            }
         }
         return Ok(Format::Zip);
     }
@@ -95,16 +88,21 @@ pub fn detect_format<P: AsRef<Path>>(path: P) -> Result<Format> {
         return Ok(Format::Opus);
     }
     if bytes.starts_with(b"\x1f\x8b") {
-        file.rewind().map_err(io)?;
+        if extension == Some(Format::TarGz) {
+            return Ok(Format::TarGz);
+        }
         let mut tar_header = [0; 512];
-        let decoded = read_prefix(
-            &mut flate2::read::GzDecoder::new(&mut file),
-            &mut tar_header,
-        );
+        let decoded = if !had_id3 && count < header.len() {
+            read_prefix(&mut flate2::read::GzDecoder::new(bytes), &mut tar_header)
+        } else {
+            file.rewind().map_err(io)?;
+            read_prefix(
+                &mut flate2::read::GzDecoder::new(BufReader::new(&mut file)),
+                &mut tar_header,
+            )
+        };
         return Ok(
-            if extension == Some(Format::TarGz)
-                || decoded.is_ok_and(|n| n == 512 && tar_header.get(257..262) == Some(b"ustar"))
-            {
+            if decoded.is_ok_and(|n| n == 512 && tar_header.get(257..262) == Some(b"ustar")) {
                 Format::TarGz
             } else {
                 Format::Gz
@@ -131,10 +129,23 @@ pub fn detect_format<P: AsRef<Path>>(path: P) -> Result<Format> {
             return Ok(Format::ThreeGp);
         }
     }
-    let text = match std::str::from_utf8(bytes) {
-        Ok(text) => Some(text),
-        Err(e) if e.error_len().is_none() => std::str::from_utf8(&bytes[..e.valid_up_to()]).ok(),
-        _ => None,
+    let trimmed_bytes = bytes
+        .strip_prefix(b"\xef\xbb\xbf")
+        .unwrap_or(bytes)
+        .trim_ascii_start();
+    let text = if trimmed_bytes
+        .first()
+        .is_some_and(|&b| matches!(b, b'<' | b'{' | b'[' | 0x80..))
+    {
+        match std::str::from_utf8(bytes) {
+            Ok(text) => Some(text),
+            Err(e) if e.error_len().is_none() => {
+                std::str::from_utf8(&bytes[..e.valid_up_to()]).ok()
+            }
+            _ => None,
+        }
+    } else {
+        None
     };
     if let Some(text) = text {
         let text = text.trim_start_matches('\u{feff}').trim_start();
@@ -154,17 +165,22 @@ pub fn detect_format<P: AsRef<Path>>(path: P) -> Result<Format> {
                             return Ok(Format::Html);
                         }
                         if e.local_name().as_ref() == "document" {
-                            let attributes: Vec<_> = e.attributes().flatten().collect();
-                            let office_namespace = attributes.iter().any(|a| {
-                                a.value.as_ref()
+                            let mut office_namespace = false;
+                            let mut text_mimetype = false;
+                            for a in e.attributes().flatten() {
+                                if a.value.as_ref()
                                     == "urn:oasis:names:tc:opendocument:xmlns:office:1.0"
-                            });
-                            let text_mimetype = attributes.iter().any(|a| {
-                                a.key.local_name().as_ref() == "mimetype"
+                                {
+                                    office_namespace = true;
+                                }
+                                if a.key.local_name().as_ref() == "mimetype"
                                     && a.value.as_ref() == "application/vnd.oasis.opendocument.text"
-                            });
-                            if office_namespace && text_mimetype {
-                                return Ok(Format::Fodt);
+                                {
+                                    text_mimetype = true;
+                                }
+                                if office_namespace && text_mimetype {
+                                    return Ok(Format::Fodt);
+                                }
                             }
                         }
                         break;
@@ -201,16 +217,23 @@ pub fn detect_format<P: AsRef<Path>>(path: P) -> Result<Format> {
             }
         }
         if text.starts_with('{') || text.starts_with('[') {
-            file.rewind().map_err(io)?;
-            if bytes.starts_with(b"\xef\xbb\xbf") {
-                file.seek(SeekFrom::Start(3)).map_err(io)?;
-            }
-            let mut deserializer = serde_json::Deserializer::from_reader(BufReader::new(
-                (&mut file).take(64 * 1024 * 1024),
-            ));
-            if serde::de::IgnoredAny::deserialize(&mut deserializer).is_ok()
-                && deserializer.end().is_ok()
-            {
+            let is_json = if !had_id3 && count < header.len() {
+                let slice = bytes.strip_prefix(b"\xef\xbb\xbf").unwrap_or(bytes);
+                let mut deserializer = serde_json::Deserializer::from_slice(slice);
+                serde::de::IgnoredAny::deserialize(&mut deserializer).is_ok()
+                    && deserializer.end().is_ok()
+            } else {
+                file.rewind().map_err(io)?;
+                if bytes.starts_with(b"\xef\xbb\xbf") {
+                    file.seek(SeekFrom::Start(3)).map_err(io)?;
+                }
+                let mut deserializer = serde_json::Deserializer::from_reader(BufReader::new(
+                    (&mut file).take(64 * 1024 * 1024),
+                ));
+                serde::de::IgnoredAny::deserialize(&mut deserializer).is_ok()
+                    && deserializer.end().is_ok()
+            };
+            if is_json {
                 return Ok(Format::Json);
             }
         }
@@ -233,6 +256,32 @@ pub fn detect_format<P: AsRef<Path>>(path: P) -> Result<Format> {
     extension.ok_or_else(|| VertexError::UnrecognizedFormat(path.to_path_buf()))
 }
 
+fn inspect_zip_archive<R: Read + Seek>(
+    archive: &mut zip::ZipArchive<R>,
+    extension: Option<Format>,
+) -> Option<Format> {
+    if archive.index_for_name("word/document.xml").is_some() {
+        return Some(word_package_format(archive, extension));
+    }
+    for (name, format) in [
+        ("xl/workbook.xml", Format::Xlsx),
+        ("ppt/presentation.xml", Format::Pptx),
+    ] {
+        if archive.index_for_name(name).is_some() {
+            return Some(format);
+        }
+    }
+    if let Ok(entry) = archive.by_name("mimetype") {
+        let mut mime = String::new();
+        if entry.take(256).read_to_string(&mut mime).is_ok() {
+            if let Some(format) = Format::from_mime(mime.trim()) {
+                return Some(format);
+            }
+        }
+    }
+    None
+}
+
 // OOXML documents and templates share word/document.xml. Inspect the declared
 // main-part MIME type so renamed files still select the correct import filter.
 fn word_package_format<R: Read + Seek>(
@@ -248,21 +297,26 @@ fn word_package_format<R: Read + Seek>(
                     Ok(
                         quick_xml::events::Event::Start(tag) | quick_xml::events::Event::Empty(tag),
                     ) if tag.local_name().as_ref() == "Override" => {
-                        let attributes: Vec<_> = tag.attributes().flatten().collect();
-                        if !attributes.iter().any(|a| {
-                            a.key.as_ref() == "PartName" && a.value.as_ref() == "/word/document.xml"
-                        }) {
-                            continue;
+                        let mut is_document_part = false;
+                        let mut matched_format = None;
+                        for a in tag.attributes().flatten() {
+                            if a.key.as_ref() == "PartName"
+                                && a.value.as_ref() == "/word/document.xml"
+                            {
+                                is_document_part = true;
+                            } else if a.key.as_ref() == "ContentType" && matched_format.is_none() {
+                                matched_format = Some(match a.value.as_ref() {
+                                    "application/vnd.ms-word.document.macroEnabled.main+xml" => Format::Docm,
+                                    "application/vnd.ms-word.template.macroEnabledTemplate.main+xml" => Format::Dotm,
+                                    "application/vnd.openxmlformats-officedocument.wordprocessingml.template.main+xml" => Format::Dotx,
+                                    _ => Format::Docx,
+                                });
+                            }
                         }
-                        if let Some(content_type) =
-                            attributes.iter().find(|a| a.key.as_ref() == "ContentType")
-                        {
-                            return match content_type.value.as_ref() {
-                                "application/vnd.ms-word.document.macroEnabled.main+xml" => Format::Docm,
-                                "application/vnd.ms-word.template.macroEnabledTemplate.main+xml" => Format::Dotm,
-                                "application/vnd.openxmlformats-officedocument.wordprocessingml.template.main+xml" => Format::Dotx,
-                                _ => Format::Docx,
-                            };
+                        if is_document_part {
+                            if let Some(format) = matched_format {
+                                return format;
+                            }
                         }
                     }
                     Ok(quick_xml::events::Event::Eof) | Err(_) => break,

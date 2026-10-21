@@ -1,6 +1,6 @@
 @font-face {
   font-family: 'SF Pro Display';
-  src: url('/fonts/SF-Pro-Display-Bold.otf') format('opentype');
+  src: url('/fonts/SF-Pro-Display-Bold.woff2') format('woff2');
   font-weight: 700;
   font-style: normal;
   font-display: swap;
@@ -8,7 +8,7 @@
 
 @font-face {
   font-family: 'SF Pro Display';
-  src: url('/fonts/SF-Pro-Display-Semibold.otf') format('opentype');
+  src: url('/fonts/SF-Pro-Display-Semibold.woff2') format('woff2');
   font-weight: 600;
   font-style: normal;
   font-display: swap;
@@ -16,7 +16,7 @@
 
 @font-face {
   font-family: 'SF Pro Display';
-  src: url('/fonts/SF-Pro-Display-Medium.otf') format('opentype');
+  src: url('/fonts/SF-Pro-Display-Medium.woff2') format('woff2');
   font-weight: 500;
   font-style: normal;
   font-display: swap;
@@ -24,7 +24,7 @@
 
 @font-face {
   font-family: 'SF Pro Display';
-  src: url('/fonts/SF-Pro-Display-Regular.otf') format('opentype');
+  src: url('/fonts/SF-Pro-Display-Regular.woff2') format('woff2');
   font-weight: 400;
   font-style: normal;
   font-display: swap;
@@ -45,14 +45,17 @@
   --petal-hover-shadow: drop-shadow(0 12px 28px rgba(0, 0, 0, 0.8));
 
   /* Petal Converting */
-  --petal-converting-fill: #18181b;
+  --petal-converting-fill: #000000;
   --petal-converting-stroke: none;
   --petal-converting-text: #ffffff;
+  --petal-converting-subtext: #a1a1aa;
+  --progress-glow-stroke: #ffffff;
 
-  /* Petal Done (Solid white with black checkmark) */
-  --petal-done-fill: #ffffff;
+  /* Petal Done (Solid black with white checkmark) */
+  --petal-done-fill: #000000;
   --petal-done-stroke: none;
-  --petal-done-text: #000000;
+  --petal-done-text: #ffffff;
+  --petal-done-shadow: drop-shadow(0 0 8px rgba(255, 255, 255, 0.9));
 
   /* Petal Error (Solid black with white text) */
   --petal-error-fill: #000000;
@@ -74,11 +77,50 @@
   --center-pill-active-stroke: none;
   --center-pill-active-text: #000000;
 
-  /* Toast Notification */
+  /* Toast Notification & Hint Pill */
   --toast-bg: #000000;
   --toast-border: none;
   --toast-text: #ffffff;
   --toast-subtext: #a1a1aa;
+  --hint-key-bg: #ffffff;
+  --hint-key-text: #000000;
+}
+
+:root[data-theme='light'] {
+  /* Light Mode Wheel Palette: Soft Off-White (#f4f4f5) & Deep Zinc Contrast, Electric Blue Progress Glow */
+  --petal-fill: #f4f4f5;
+  --petal-text: #18181b;
+
+  --petal-hover-fill: #18181b;
+  --petal-hover-text: #f4f4f5;
+  --petal-hover-shadow: drop-shadow(0 12px 28px rgba(0, 0, 0, 0.35));
+
+  --petal-converting-fill: #f4f4f5;
+  --petal-converting-text: #18181b;
+  --petal-converting-subtext: #2563eb;
+  --progress-glow-stroke: #3b82f6;
+
+  --petal-done-fill: #f4f4f5;
+  --petal-done-text: #2563eb;
+  --petal-done-shadow: drop-shadow(0 0 8px rgba(59, 130, 246, 0.85));
+
+  --petal-error-fill: #f4f4f5;
+  --petal-error-text: #dc2626;
+
+  --petal-disabled-fill: #e4e4e7;
+  --petal-disabled-text: #a1a1aa;
+
+  --center-hub-fill: #f4f4f5;
+  --center-pill-fill: #f4f4f5;
+  --center-pill-text: #18181b;
+  --center-pill-active-fill: #18181b;
+  --center-pill-active-text: #f4f4f5;
+
+  --toast-bg: #f4f4f5;
+  --toast-text: #18181b;
+  --toast-subtext: #52525b;
+  --hint-key-bg: #18181b;
+  --hint-key-text: #f4f4f5;
 }
 
 * {

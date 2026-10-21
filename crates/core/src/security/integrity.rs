@@ -20,7 +20,7 @@ impl AppIntegrityService {
         }
         let mut file = open.open(path)?;
         let mut hasher = Sha256::new();
-        let mut buffer = vec![0u8; 64 * 1024];
+        let mut buffer = [0u8; 64 * 1024];
 
         loop {
             let bytes_read = match file.read(&mut buffer) {
@@ -41,9 +41,8 @@ impl AppIntegrityService {
     /// by reading the Windows NTFS Zone.Identifier alternate data stream.
     /// Returns (is_trusted, Option<untrusted_url>).
     pub fn check_download_origin(file_path: &Path) -> (bool, Option<String>) {
-        if !file_path.exists() {
-            return (true, None);
-        }
+        #[cfg(not(target_os = "windows"))]
+        let _ = file_path;
 
         #[cfg(target_os = "windows")]
         {
@@ -58,20 +57,20 @@ impl AppIntegrityService {
             if stream.take(65537).read_to_string(&mut content).is_err() || content.len() > 65536 {
                 return (false, Some("Invalid Zone.Identifier".into()));
             }
-            let (host_url, referrer_url) = Self::parse_zone_identifier(&content);
+            let (host_url, referrer_url) = Self::parse_zone_identifier_str(&content);
 
             if let Some(host) = host_url {
                 if !host.is_empty()
                     && !host.eq_ignore_ascii_case("about:internet")
-                    && !Self::is_trusted_download_domain(&host)
+                    && !Self::is_trusted_download_domain(host)
                 {
-                    return (false, Some(host));
+                    return (false, Some(host.to_string()));
                 }
             }
 
             if let Some(referrer) = referrer_url {
-                if !referrer.is_empty() && !Self::is_trusted_download_domain(&referrer) {
-                    return (false, Some(referrer));
+                if !referrer.is_empty() && !Self::is_trusted_download_domain(referrer) {
+                    return (false, Some(referrer.to_string()));
                 }
             }
         }
@@ -81,16 +80,25 @@ impl AppIntegrityService {
 
     /// Parses Zone.Identifier stream content to extract HostUrl and ReferrerUrl.
     pub fn parse_zone_identifier(content: &str) -> (Option<String>, Option<String>) {
+        let (host_url, referrer_url) = Self::parse_zone_identifier_str(content);
+        (
+            host_url.map(str::to_string),
+            referrer_url.map(str::to_string),
+        )
+    }
+
+    fn parse_zone_identifier_str(content: &str) -> (Option<&str>, Option<&str>) {
         let mut host_url = None;
         let mut referrer_url = None;
 
         for line in content.lines() {
             let trimmed = line.trim();
             if let Some((key, val)) = trimmed.split_once('=') {
-                if key.trim().eq_ignore_ascii_case("HostUrl") {
-                    host_url = Some(val.trim().to_string());
-                } else if key.trim().eq_ignore_ascii_case("ReferrerUrl") {
-                    referrer_url = Some(val.trim().to_string());
+                let key = key.trim();
+                if key.eq_ignore_ascii_case("HostUrl") {
+                    host_url = Some(val.trim());
+                } else if key.eq_ignore_ascii_case("ReferrerUrl") {
+                    referrer_url = Some(val.trim());
                 }
             }
         }

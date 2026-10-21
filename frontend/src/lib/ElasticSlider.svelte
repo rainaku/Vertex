@@ -290,4 +290,37 @@
     color: #71717a;
     letter-spacing: 0.02em;
   }
+
+  :global(:root[data-theme='light']) .slider-root {
+    border-color: #d4d4d8;
+    background: #e4e4e7;
+  }
+  :global(:root[data-theme='light']) .slider-root:hover {
+    border-color: #a1a1aa;
+    background: #dcdce0;
+  }
+  :global(:root[data-theme='light']) .slider-root.dragging {
+    border-color: #52525b;
+    background: #e4e4e7;
+  }
+  :global(:root[data-theme='light']) .track-fill {
+    background: rgba(24, 24, 27, 0.14);
+  }
+  :global(:root[data-theme='light']) .thumb-bar {
+    background: #18181b;
+    box-shadow: 0 0 6px rgba(0, 0, 0, 0.25), 0 2px 4px rgba(0, 0, 0, 0.2);
+  }
+  :global(:root[data-theme='light']) .value-col {
+    background: #ececee;
+    border-left-color: #d4d4d8;
+  }
+  :global(:root[data-theme='light']) .val-number {
+    color: #18181b;
+  }
+  :global(:root[data-theme='light']) .slider-root.dragging .val-number {
+    color: #09090b;
+  }
+  :global(:root[data-theme='light']) .val-unit {
+    color: #52525b;
+  }
 </style>

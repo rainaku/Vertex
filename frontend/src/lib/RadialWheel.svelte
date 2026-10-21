@@ -32,6 +32,7 @@
   }));
 
   $: activeFormat = activeIndex >= 0 && activeIndex < formats.length ? formats[activeIndex] : null;
+  $: pageDots = Array.from({ length: totalPages }, (_, i) => i);
   // Backend dependency reasons currently carry Vietnamese / English in one
   // string. Only split the explicit bilingual separator, not path slashes.
   $: activeReason = localizeReason(activeFormat?.reason, $language);
@@ -41,6 +42,12 @@
     if (separator < 0) return reason;
     return (locale === 'vi' ? reason.slice(0, separator) : reason.slice(separator + 3)).trim();
   }
+
+  let containerRect: DOMRect | null = null;
+  function invalidateContainerRect(_status: typeof status, _page: number) {
+    containerRect = null;
+  }
+  $: invalidateContainerRect(status, page);
 
   let dwellTimer: ReturnType<typeof setTimeout> | null = null;
   let dwellCooldown = false;
@@ -75,7 +82,13 @@
       return;
     }
 
-    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    let rect = containerRect;
+    if (!rect) {
+      rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+      if (rect.width >= 286 && rect.height >= 286) {
+        containerRect = rect;
+      }
+    }
     const hit = hitTestClient(e.clientX, e.clientY, rect);
 
     if (hit.type === 'petal') {
@@ -96,6 +109,7 @@
   }
 
   function handlePointerLeave() {
+    containerRect = null;
     clearDwell();
     if (status !== 'converting' && status !== 'done') {
       onHoverChange(-1);
@@ -151,12 +165,10 @@
       </filter>
 
       <!-- Brilliant white glow filter for converting progress line -->
-      <filter id="white-progress-glow" x="-60%" y="-60%" width="220%" height="220%">
-        <feGaussianBlur in="SourceGraphic" stdDeviation="2" result="glow1" />
-        <feGaussianBlur in="SourceGraphic" stdDeviation="5" result="glow2" />
-        <feGaussianBlur in="SourceGraphic" stdDeviation="9" result="glow3" />
+      <filter id="white-progress-glow" x="-25%" y="-25%" width="150%" height="150%">
+        <feGaussianBlur in="SourceGraphic" stdDeviation="2.5" result="glow1" />
+        <feGaussianBlur in="SourceGraphic" stdDeviation="6" result="glow2" />
         <feMerge>
-          <feMergeNode in="glow3" />
           <feMergeNode in="glow2" />
           <feMergeNode in="glow1" />
           <feMergeNode in="SourceGraphic" />
@@ -324,7 +336,7 @@
       <!-- Only show page dots beneath a single-line, idle center label. -->
       {#if hasMorePages && totalPages > 1 && !activeFormat && activeIndex !== 7 && status === 'idle'}
         <g class="page-dots" transform="translate(0, 13)">
-          {#each Array(totalPages) as _, pIdx}
+          {#each pageDots as pIdx}
             <circle
               cx={(pIdx - (totalPages - 1) / 2) * 7}
               cy="0"
@@ -419,15 +431,15 @@
     font-weight: 800;
   }
 
-  /* Glowing white progress line running around petal perimeter */
+  /* Glowing progress line running around petal perimeter */
   .petal-progress-glow {
     fill: none;
-    stroke: #ffffff;
+    stroke: var(--progress-glow-stroke, #ffffff);
     stroke-width: 3.5;
     stroke-linecap: round;
     stroke-linejoin: round;
     filter: url(#white-progress-glow);
-    transition: stroke-dashoffset 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+    transition: stroke-dashoffset 0.22s cubic-bezier(0.16, 1, 0.3, 1), stroke 0.15s ease;
     pointer-events: none;
   }
 
@@ -467,7 +479,7 @@
 
   /* Converting State */
   .petal-group.converting .petal-shape {
-    fill: #000000;
+    fill: var(--petal-converting-fill, #000000);
     stroke: none;
     filter: url(#active-petal-shadow);
   }
@@ -477,7 +489,7 @@
     font-size: 22px;
     font-weight: 700;
     letter-spacing: 0.5px;
-    fill: #ffffff;
+    fill: var(--petal-converting-text, #ffffff);
   }
 
   .petal-text-percent {
@@ -485,12 +497,12 @@
     font-size: 16px;
     font-weight: 700;
     letter-spacing: 0.5px;
-    fill: #a1a1aa;
+    fill: var(--petal-converting-subtext, #a1a1aa);
   }
 
-  /* Done State: Inverted solid black with white checkmark & glowing outline */
+  /* Done State */
   .petal-group.done .petal-shape {
-    fill: #000000;
+    fill: var(--petal-done-fill, #000000);
     stroke: none;
     filter: url(#active-petal-shadow);
   }
@@ -499,8 +511,8 @@
     font-family: var(--font-family);
     font-size: 24px;
     font-weight: 800;
-    fill: #ffffff;
-    filter: drop-shadow(0 0 8px rgba(255, 255, 255, 0.9));
+    fill: var(--petal-done-text, #ffffff);
+    filter: var(--petal-done-shadow, drop-shadow(0 0 8px rgba(255, 255, 255, 0.9)));
   }
 
   /* Error State: Solid black with crisp white X */
@@ -605,11 +617,11 @@
     display: flex;
     align-items: flex-start;
     gap: 8px;
-    background: #000000;
+    background: var(--toast-bg, #000000);
     border: none;
     border-radius: 16px;
     padding: 10px 16px;
-    color: #ffffff;
+    color: var(--toast-text, #ffffff);
     font-family: var(--font-family);
     font-size: 16px;
     font-weight: 600;

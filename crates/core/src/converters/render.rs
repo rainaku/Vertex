@@ -45,7 +45,11 @@ impl Converter for SvgConverter {
         crate::path_utils::ensure_distinct(input, output)?;
         let opts = opts.normalized();
         let file = std::fs::File::open(input).map_err(|e| io_error(input, e))?;
-        let mut data = Vec::new();
+        let capacity = file
+            .metadata()
+            .map(|m| m.len().min(MAX_SVG_SIZE + 1) as usize)
+            .unwrap_or(0);
+        let mut data = Vec::with_capacity(capacity);
         file.take(MAX_SVG_SIZE + 1)
             .read_to_end(&mut data)
             .map_err(|e| io_error(input, e))?;
@@ -62,13 +66,11 @@ impl Converter for SvgConverter {
         config.image_href_resolver.resolve_string = Box::new(|_, _| None);
         static FONTS: std::sync::OnceLock<std::sync::Arc<resvg::usvg::fontdb::Database>> =
             std::sync::OnceLock::new();
-        config.fontdb = FONTS
-            .get_or_init(|| {
-                let mut db = resvg::usvg::fontdb::Database::new();
-                db.load_system_fonts();
-                std::sync::Arc::new(db)
-            })
-            .clone();
+        config.fontdb = std::sync::Arc::clone(FONTS.get_or_init(|| {
+            let mut db = resvg::usvg::fontdb::Database::new();
+            db.load_system_fonts();
+            std::sync::Arc::new(db)
+        }));
         let tree = resvg::usvg::Tree::from_data(&data, &config)
             .map_err(|e| VertexError::Encoding(e.to_string()))?;
         let size = tree.size();
@@ -90,15 +92,97 @@ impl Converter for SvgConverter {
             resvg::tiny_skia::Transform::from_scale(scale, scale),
             &mut pixmap.as_mut(),
         );
-        let temp = workspace()?;
-        let png = temp.path().join("render.png");
-        pixmap
-            .save_png(&png)
-            .map_err(|e| VertexError::Encoding(e.to_string()))?;
-        PureRustImageConverter::default().convert(
-            &png,
+        cancel.check()?;
+        // tiny-skia's PNG encoder uses the same demultiplication. Consume its
+        // allocation directly so alpha rounding and colors remain identical.
+        static DEMULTIPLY: std::sync::OnceLock<Box<[[u8; 256]; 256]>> = std::sync::OnceLock::new();
+        let demultiply = DEMULTIPLY.get_or_init(|| {
+            let mut table = Box::new([[0u8; 256]; 256]);
+            for alpha in 1..=255usize {
+                let a = alpha as f32 / 255.0;
+                for c in 0..=255usize {
+                    table[alpha][c] = (c as f32 / a + 0.5) as u8;
+                }
+            }
+            table
+        });
+        let img = if Format::from_path_extension(output) == Some(Format::Jpg)
+            && opts.max_width.is_none_or(|mw| width <= mw)
+            && opts.max_height.is_none_or(|mh| height <= mh)
+        {
+            let mut raw_rgb = vec![0u8; (width as usize) * (height as usize) * 3];
+            if opts.jpeg_background == [255, 255, 255] {
+                static DEMULTIPLY_WHITE_BG: std::sync::OnceLock<Box<[[u8; 256]; 256]>> =
+                    std::sync::OnceLock::new();
+                let table = DEMULTIPLY_WHITE_BG.get_or_init(|| {
+                    let mut t = Box::new([[255u8; 256]; 256]);
+                    for alpha in 1..=255usize {
+                        let a = alpha as f32 / 255.0;
+                        let alpha_u16 = alpha as u16;
+                        let inv = 255 - alpha_u16;
+                        for c in 0..=255usize {
+                            let demul = (c as f32 / a + 0.5) as u8;
+                            t[alpha][c] =
+                                ((u16::from(demul) * alpha_u16 + 255 * inv + 127) / 255) as u8;
+                        }
+                    }
+                    t
+                });
+                for (&[r, g, b, a], out) in pixmap
+                    .data()
+                    .as_chunks::<4>()
+                    .0
+                    .iter()
+                    .zip(raw_rgb.as_chunks_mut::<3>().0)
+                {
+                    let lut = &table[usize::from(a)];
+                    *out = [
+                        lut[usize::from(r)],
+                        lut[usize::from(g)],
+                        lut[usize::from(b)],
+                    ];
+                }
+            } else {
+                let [bg0, bg1, bg2] = opts.jpeg_background.map(u16::from);
+                for (&[r, g, b, a], out) in pixmap
+                    .data()
+                    .as_chunks::<4>()
+                    .0
+                    .iter()
+                    .zip(raw_rgb.as_chunks_mut::<3>().0)
+                {
+                    let lut = &demultiply[usize::from(a)];
+                    let alpha = u16::from(a);
+                    let inv = 255 - alpha;
+                    *out = [
+                        ((u16::from(lut[usize::from(r)]) * alpha + bg0 * inv + 127) / 255) as u8,
+                        ((u16::from(lut[usize::from(g)]) * alpha + bg1 * inv + 127) / 255) as u8,
+                        ((u16::from(lut[usize::from(b)]) * alpha + bg2 * inv + 127) / 255) as u8,
+                    ];
+                }
+            }
+            drop(pixmap);
+            let rgb = image::RgbImage::from_raw(width, height, raw_rgb)
+                .ok_or_else(|| VertexError::Encoding("Invalid SVG raster dimensions".into()))?;
+            image::DynamicImage::ImageRgb8(rgb)
+        } else {
+            let mut raw_rgba = pixmap.take();
+            for px in raw_rgba.as_chunks_mut::<4>().0 {
+                let lut = &demultiply[usize::from(px[3])];
+                px[0] = lut[usize::from(px[0])];
+                px[1] = lut[usize::from(px[1])];
+                px[2] = lut[usize::from(px[2])];
+            }
+            let rgba = image::RgbaImage::from_raw(width, height, raw_rgba)
+                .ok_or_else(|| VertexError::Encoding("Invalid SVG raster dimensions".into()))?;
+            image::DynamicImage::ImageRgba8(rgba)
+        };
+        super::image::encode_image(
+            img,
+            input,
             output,
             &opts,
+            Default::default(),
             &|p| progress(0.5 + p * 0.5),
             cancel,
         )
@@ -162,7 +246,7 @@ impl Converter for PdfConverter {
             .arg(crate::path_utils::external_path(&source))
             .arg(&prefix);
         run_tool(&mut command, cancel, Duration::from_secs(300))?;
-        PureRustImageConverter::default().convert(
+        PureRustImageConverter.convert(
             &prefix.with_extension("png"),
             output,
             &opts,
@@ -205,10 +289,15 @@ impl MagickImageConverter {
         }
         cache.as_ref().is_some_and(|(_, text)| {
             text.lines().any(|line| {
-                let fields: Vec<_> = line.split_whitespace().collect();
-                fields.len() >= 3
-                    && fields[0].trim_end_matches('*') == self.0.label()
-                    && fields[2].contains('r')
+                let mut fields = line.split_whitespace();
+                let Some(format) = fields.next() else {
+                    return false;
+                };
+                let _ = fields.next();
+                let Some(mode) = fields.next() else {
+                    return false;
+                };
+                format.trim_end_matches('*') == self.0.label() && mode.contains('r')
             })
         })
     }
@@ -257,13 +346,7 @@ impl Converter for MagickImageConverter {
             cancel,
             Duration::from_secs(300),
         )?;
-        PureRustImageConverter::default().convert(
-            &png,
-            output,
-            opts,
-            &|p| progress(0.5 + p * 0.5),
-            cancel,
-        )
+        PureRustImageConverter.convert(&png, output, opts, &|p| progress(0.5 + p * 0.5), cancel)
     }
 }
 
@@ -309,13 +392,7 @@ impl Converter for AvifFfmpegConverter {
             cancel,
             Duration::from_secs(300),
         )?;
-        PureRustImageConverter::default().convert(
-            &png,
-            output,
-            opts,
-            &|p| progress(0.5 + p * 0.5),
-            cancel,
-        )
+        PureRustImageConverter.convert(&png, output, opts, &|p| progress(0.5 + p * 0.5), cancel)
     }
 }
 

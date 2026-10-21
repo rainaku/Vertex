@@ -5,23 +5,35 @@ static UI_BUSY: AtomicBool = AtomicBool::new(false);
 static ACTIVE_JOBS: AtomicUsize = AtomicUsize::new(0);
 static SETTINGS_OPEN: AtomicBool = AtomicBool::new(false);
 #[cfg(windows)]
+static DRAG_OVER_WEBVIEW: AtomicBool = AtomicBool::new(false);
+#[cfg(windows)]
 static DROP_SESSION: std::sync::Mutex<crate::drag_gesture::DropSession> =
     std::sync::Mutex::new(crate::drag_gesture::DropSession::new());
 
 #[cfg(windows)]
 pub fn on_native_drag_event(app: &AppHandle, event: &tauri::DragDropEvent) {
+    if matches!(event, tauri::DragDropEvent::Over { .. })
+        && DRAG_OVER_WEBVIEW.load(Ordering::Relaxed)
+    {
+        return;
+    }
     let close = {
         let mut session = DROP_SESSION.lock().unwrap_or_else(|p| p.into_inner());
         match event {
             tauri::DragDropEvent::Enter { .. } | tauri::DragDropEvent::Over { .. } => {
                 session.enter();
+                DRAG_OVER_WEBVIEW.store(true, Ordering::Relaxed);
                 false
             }
             tauri::DragDropEvent::Drop { .. } => {
+                DRAG_OVER_WEBVIEW.store(false, Ordering::Relaxed);
                 session.finish();
                 false
             }
-            tauri::DragDropEvent::Leave => session.leave(),
+            tauri::DragDropEvent::Leave => {
+                DRAG_OVER_WEBVIEW.store(false, Ordering::Relaxed);
+                session.leave()
+            }
             _ => false,
         }
     };
@@ -53,6 +65,7 @@ pub fn settings_open() -> bool {
 #[cfg(windows)]
 mod windows_drag {
     use super::*;
+    use std::sync::atomic::AtomicIsize;
     use std::sync::{mpsc, OnceLock};
     use windows_sys::Win32::Foundation::{LPARAM, LRESULT, POINT, WPARAM};
     use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
@@ -71,9 +84,27 @@ mod windows_drag {
     static TRACK_MOVES: AtomicBool = AtomicBool::new(false);
     static LEFT_DOWN: AtomicBool = AtomicBool::new(false);
     static SHIFT_DOWN: AtomicBool = AtomicBool::new(false);
+    static MAIN_HWND: AtomicIsize = AtomicIsize::new(0);
 
     unsafe extern "system" fn mouse_hook(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
         if code >= 0 {
+            let message = wparam as u32;
+            if message == WM_MOUSEMOVE {
+                if !TRACK_MOVES.load(Ordering::Relaxed) {
+                    return CallNextHookEx(std::ptr::null_mut(), code, wparam, lparam);
+                }
+                let point = (*(lparam as *const MSLLHOOKSTRUCT)).pt;
+                if let Some(sender) = EVENTS.get() {
+                    let _ = sender.send(Event::Move(point));
+                }
+                return CallNextHookEx(std::ptr::null_mut(), code, wparam, lparam);
+            }
+            if !matches!(
+                message,
+                WM_LBUTTONDOWN | WM_RBUTTONDOWN | WM_LBUTTONUP | WM_RBUTTONUP
+            ) {
+                return CallNextHookEx(std::ptr::null_mut(), code, wparam, lparam);
+            }
             let primary_right = GetSystemMetrics(SM_SWAPBUTTON) != 0;
             let down = if primary_right {
                 WM_RBUTTONDOWN
@@ -85,22 +116,22 @@ mod windows_drag {
             } else {
                 WM_LBUTTONUP
             };
-            let message = wparam as u32;
-            let point = (*(lparam as *const MSLLHOOKSTRUCT)).pt;
             let event = if message == down {
-                LEFT_DOWN.store(true, Ordering::Relaxed);
                 if (GetAsyncKeyState(VK_SHIFT as i32) as u16 & 0x8000) != 0 {
+                    LEFT_DOWN.store(true, Ordering::Relaxed);
                     TRACK_MOVES.store(true, Ordering::Relaxed);
+                    let point = (*(lparam as *const MSLLHOOKSTRUCT)).pt;
                     Some(Event::Down(point))
                 } else {
                     None
                 }
             } else if message == up {
-                LEFT_DOWN.store(false, Ordering::Relaxed);
                 TRACK_MOVES.store(false, Ordering::Relaxed);
-                Some(Event::Up)
-            } else if message == WM_MOUSEMOVE && TRACK_MOVES.load(Ordering::Relaxed) {
-                Some(Event::Move(point))
+                if LEFT_DOWN.swap(false, Ordering::Relaxed) {
+                    Some(Event::Up)
+                } else {
+                    None
+                }
             } else {
                 None
             };
@@ -121,8 +152,10 @@ mod windows_drag {
                 WM_KEYDOWN | WM_SYSKEYDOWN => {
                     if key == u32::from(VK_ESCAPE) {
                         TRACK_MOVES.store(false, Ordering::Relaxed);
-                        if let Some(sender) = EVENTS.get() {
-                            let _ = sender.send(Event::Escape);
+                        if LEFT_DOWN.load(Ordering::Relaxed) {
+                            if let Some(sender) = EVENTS.get() {
+                                let _ = sender.send(Event::Escape);
+                            }
                         }
                     } else if is_shift && !SHIFT_DOWN.swap(true, Ordering::Relaxed) {
                         let primary = if GetSystemMetrics(SM_SWAPBUTTON) != 0 {
@@ -160,12 +193,18 @@ mod windows_drag {
             if foreground.is_null() || IsIconic(foreground) != 0 {
                 return false;
             }
-            if app
-                .get_webview_window("main")
-                .and_then(|w| w.hwnd().ok())
-                .is_some_and(|h| std::ptr::eq(h.0, foreground))
-            {
+            let mut main_hwnd = MAIN_HWND.load(Ordering::Relaxed);
+            if main_hwnd == 0 {
+                if let Some(h) = app.get_webview_window("main").and_then(|w| w.hwnd().ok()) {
+                    main_hwnd = h.0 as isize;
+                    MAIN_HWND.store(main_hwnd, Ordering::Relaxed);
+                }
+            }
+            if main_hwnd != 0 && foreground as isize == main_hwnd {
                 return true;
+            }
+            if GetWindowLongW(foreground, GWL_STYLE) as u32 & WS_CAPTION != 0 {
+                return false;
             }
             let monitor = windows_sys::Win32::Graphics::Gdi::MonitorFromWindow(
                 foreground,
@@ -179,16 +218,36 @@ mod windows_drag {
             {
                 return false;
             }
+            if rect.left > info.rcMonitor.left
+                || rect.top > info.rcMonitor.top
+                || rect.right < info.rcMonitor.right
+                || rect.bottom < info.rcMonitor.bottom
+            {
+                return false;
+            }
             // Borderless/exclusive fullscreen. Exempt the Explorer desktop.
+            const PROGMAN: &[u16] = &[
+                b'P' as u16,
+                b'r' as u16,
+                b'o' as u16,
+                b'g' as u16,
+                b'm' as u16,
+                b'a' as u16,
+                b'n' as u16,
+            ];
+            const WORKERW: &[u16] = &[
+                b'W' as u16,
+                b'o' as u16,
+                b'r' as u16,
+                b'k' as u16,
+                b'e' as u16,
+                b'r' as u16,
+                b'W' as u16,
+            ];
             let mut class = [0; 64];
             let len = GetClassNameW(foreground, class.as_mut_ptr(), class.len() as i32);
-            let class = String::from_utf16_lossy(&class[..len.max(0) as usize]);
-            !matches!(class.as_str(), "Progman" | "WorkerW")
-                && GetWindowLongW(foreground, GWL_STYLE) as u32 & WS_CAPTION == 0
-                && rect.left <= info.rcMonitor.left
-                && rect.top <= info.rcMonitor.top
-                && rect.right >= info.rcMonitor.right
-                && rect.bottom >= info.rcMonitor.bottom
+            let class = &class[..len.max(0) as usize];
+            !matches!(class, PROGMAN | WORKERW)
         }
     }
 
@@ -230,6 +289,7 @@ mod windows_drag {
                                 return;
                             }
                             if let Some(win) = ui_app.get_webview_window("main") {
+                                DRAG_OVER_WEBVIEW.store(false, Ordering::Relaxed);
                                 DROP_SESSION
                                     .lock()
                                     .unwrap_or_else(|p| p.into_inner())
@@ -261,6 +321,7 @@ mod windows_drag {
                                 let mut session =
                                     DROP_SESSION.lock().unwrap_or_else(|p| p.into_inner());
                                 if action == Action::Cancel {
+                                    DRAG_OVER_WEBVIEW.store(false, Ordering::Relaxed);
                                     session.finish();
                                     true
                                 } else {

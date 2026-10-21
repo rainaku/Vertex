@@ -99,13 +99,13 @@ impl Converter for PdfDocumentConverter {
 }
 
 fn validate_editable_docx(path: &Path, cancel: &CancelToken) -> Result<()> {
-    let file = File::open(path).map_err(|e| io_error(path, e))?;
+    let file = std::io::BufReader::new(File::open(path).map_err(|e| io_error(path, e))?);
     let mut zip = zip::ZipArchive::new(file).map_err(|e| invalid(e.to_string()))?;
     let entry = zip
         .by_name("word/document.xml")
         .map_err(|e| invalid(e.to_string()))?;
     const MAX_XML: u64 = 64 * 1024 * 1024;
-    let mut xml = String::new();
+    let mut xml = String::with_capacity(entry.size().min(MAX_XML + 1) as usize);
     entry
         .take(MAX_XML + 1)
         .read_to_string(&mut xml)
@@ -141,8 +141,8 @@ fn validate_editable_docx(path: &Path, cancel: &CancelToken) -> Result<()> {
                     in_text = false;
                 }
             }
-            quick_xml::events::Event::Text(text) if in_text => {
-                editable |= !text.as_ref().trim().is_empty();
+            quick_xml::events::Event::Text(text) if in_text && !editable => {
+                editable = !text.as_ref().trim().is_empty();
             }
             quick_xml::events::Event::GeneralRef(text) if in_text => {
                 let reference = format!("&{};", text.as_ref());

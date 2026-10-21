@@ -34,10 +34,11 @@ impl SafeLauncher {
         #[cfg(windows)]
         validate_local_path(raw_path, 0)?;
         #[cfg(not(windows))]
-        if raw_path.to_string_lossy().starts_with("\\\\")
-            || raw_path.to_string_lossy().starts_with("//")
         {
-            return Err("Network paths are not permitted".into());
+            let bytes = raw_path.as_os_str().as_encoded_bytes();
+            if bytes.starts_with(b"\\\\") || bytes.starts_with(b"//") {
+                return Err("Network paths are not permitted".into());
+            }
         }
         let canonical = raw_path
             .canonicalize()
@@ -57,12 +58,12 @@ fn is_local_prefix(path: &Path) -> bool {
         Some(Component::Prefix(prefix)) => match prefix.kind() {
             Prefix::Disk(_) | Prefix::VerbatimDisk(_) => true,
             // Local mounted volumes are legal, including folder mount points.
-            Prefix::Verbatim(name) => name.to_string_lossy().starts_with("Volume{"),
+            Prefix::Verbatim(name) => name.as_encoded_bytes().starts_with(b"Volume{"),
             _ => false,
         },
         _ => {
-            !(path.to_string_lossy().starts_with("\\\\")
-                || path.to_string_lossy().starts_with("//"))
+            let bytes = path.as_os_str().as_encoded_bytes();
+            !(bytes.starts_with(b"\\\\") || bytes.starts_with(b"//"))
         }
     }
 }

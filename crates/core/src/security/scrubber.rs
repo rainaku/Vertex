@@ -1,37 +1,48 @@
-use regex::{Captures, Regex};
+use regex::{Captures, Regex, Replacer};
 use std::borrow::Cow;
 use std::sync::LazyLock;
 
 static SECRETS: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
     r#"(?ix)
-    (?P<assignment>\b["']?(?:password|passwd|pwd|token|access_token|api_key|apikey|key|secret|client_secret|sp_dc)["']?\s*[:=]\s*)
+    (?P<assignment>(?-u:\b)["']?(?:password|passwd|pwd|token|access_token|api_key|apikey|key|secret|client_secret|sp_dc)["']?(?-u:\s)*[:=](?-u:\s)*)
     (?:"(?:\\.|[^"\\\r\n])*"|'(?:\\.|[^'\\\r\n])*'|[^\s,;&"'<>]+)
     | (?P<userinfo>https?://)[^/\s@]+@
-    | (?P<bearer>Bearer\s+)[A-Za-z0-9\-._~+/]+=*
+    | (?P<bearer>Bearer(?-u:\s)+)[A-Za-z0-9\-._~+/]+=*
     | (?P<google>AIza)[0-9A-Za-z\-_]{16,40}
     | (?P<github>(?:ghp|gho|ghu|ghs|ghr)_[0-9A-Za-z]{36}|github_pat_[0-9A-Za-z_]{82})
     | (?P<dpapi>enc:)[A-Za-z0-9+/=]{16,}
     "#).expect("valid credential redaction regex")
 });
 
+struct SecretReplacer;
+
+impl Replacer for SecretReplacer {
+    fn replace_append(&mut self, caps: &Captures<'_>, dst: &mut String) {
+        if let Some(prefix) = caps.get(1).or_else(|| caps.get(3)) {
+            dst.push_str(prefix.as_str());
+            dst.push_str("[REDACTED]");
+        } else if let Some(prefix) = caps.get(2) {
+            dst.push_str(prefix.as_str());
+            dst.push_str("[REDACTED]@");
+        } else if caps.get(4).is_some() {
+            dst.push_str("AIza[REDACTED]");
+        } else if caps.get(5).is_some() {
+            dst.push_str("[REDACTED_GITHUB_TOKEN]");
+        } else {
+            dst.push_str("enc:[REDACTED]");
+        }
+    }
+}
+
 pub struct SensitiveDataScrubber;
 impl SensitiveDataScrubber {
     /// One pass, and no allocation at all for ordinary log lines.
     pub fn scrub(input: &str) -> Cow<'_, str> {
-        SECRETS.replace_all(input, |caps: &Captures<'_>| {
-            if let Some(prefix) = caps.name("assignment").or_else(|| caps.name("bearer")) {
-                format!("{}[REDACTED]", prefix.as_str())
-            } else if let Some(prefix) = caps.name("userinfo") {
-                format!("{}[REDACTED]@", prefix.as_str())
-            } else if caps.name("google").is_some() {
-                "AIza[REDACTED]".into()
-            } else if caps.name("github").is_some() {
-                "[REDACTED_GITHUB_TOKEN]".into()
-            } else {
-                "enc:[REDACTED]".into()
-            }
-        })
+        if !SECRETS.is_match(input) {
+            return Cow::Borrowed(input);
+        }
+        SECRETS.replace_all(input, SecretReplacer)
     }
 }
 #[cfg(test)]

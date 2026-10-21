@@ -4,5 +4,6 @@ export function sliderValue(value: number, min: number, max: number, step: numbe
   if (value >= max) return max;
   const stride = step > 0 && Number.isFinite(step) ? step : 1;
   const snapped = min + Math.round((value - min) / stride) * stride;
-  return Math.min(max, Math.max(min, Number(snapped.toFixed(10))));
+  const rounded = Number.isInteger(min) && Number.isInteger(stride) ? snapped : Math.round(snapped * 1e10) / 1e10;
+  return Math.min(max, Math.max(min, rounded));
 }

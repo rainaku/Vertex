@@ -1,0 +1,72 @@
+[
+  {
+    "name": "svg_png_1080p",
+    "before_ms": 53.6774,
+    "after_ms": 39.6691,
+    "speedup": 1.353,
+    "same_bytes": true
+  },
+  {
+    "name": "svg_jpeg_1080p",
+    "before_ms": 91.521,
+    "after_ms": 76.445,
+    "speedup": 1.197,
+    "same_bytes": true
+  },
+  {
+    "name": "png_jpeg_1080p",
+    "before_ms": 64.8434,
+    "after_ms": 65.4984,
+    "speedup": 0.99,
+    "same_bytes": true
+  },
+  {
+    "name": "png_resize_webp_640",
+    "before_ms": 26.1286,
+    "after_ms": 26.366,
+    "speedup": 0.991,
+    "same_bytes": true
+  },
+  {
+    "name": "csv_tsv_50k",
+    "before_ms": 100.5436,
+    "after_ms": 14.8442,
+    "speedup": 6.773,
+    "same_bytes": true
+  },
+  {
+    "name": "csv_json_50k",
+    "before_ms": 83.27850000000001,
+    "after_ms": 20.415200000000002,
+    "speedup": 4.079,
+    "same_bytes": true
+  },
+  {
+    "name": "json_csv_50k",
+    "before_ms": 100.4743,
+    "after_ms": 88.9234,
+    "speedup": 1.13,
+    "same_bytes": true
+  },
+  {
+    "name": "text_html_150k",
+    "before_ms": 23.3046,
+    "after_ms": 17.232,
+    "speedup": 1.352,
+    "same_bytes": true
+  },
+  {
+    "name": "markdown_html_10k",
+    "before_ms": 12.3323,
+    "after_ms": 12.033999999999999,
+    "speedup": 1.025,
+    "same_bytes": true
+  },
+  {
+    "name": "zip_targz_32_files",
+    "before_ms": 34.8484,
+    "after_ms": 33.993700000000004,
+    "speedup": 1.025,
+    "same_bytes": false
+  }
+]

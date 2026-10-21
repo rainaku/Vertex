@@ -14,6 +14,11 @@ import type {
 // Check if running inside Tauri runtime
 export const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 
+const FORMAT_BY_ID = new Map(contract.formats.map((item) => [item.format, item]));
+const FORMAT_BY_EXT = new Map(
+  contract.formats.flatMap((item) => item.extensions.map((ext) => [ext.toLowerCase(), item] as const))
+);
+
 export async function getInputFormats() {
   if (!isTauri) return contract.formats;
   return invoke<typeof contract.formats>('get_input_formats');
@@ -24,14 +29,21 @@ export function mockOutputPath(path: string, target: string): string {
   const directory = path.slice(0, boundary);
   const name = path.slice(boundary);
   const stem = /\.tar\.gz$/i.test(name) ? name.slice(0, -7) : name.replace(/\.[^.]+$/, '');
-  const extension = contract.formats.find(item => item.format === target)?.extension ?? target.toLowerCase();
+  const extension = FORMAT_BY_ID.get(target)?.extension ?? target.toLowerCase();
   return directory + stem + '.' + extension;
 }
 
 export async function detectFile(path: string): Promise<FormatInfo> {
   if (!isTauri) {
     const filename = path.split(/[/\\]/).pop() || path;
-    const definition = contract.formats.find(item => item.extensions.some(ext => filename.toLowerCase().endsWith('.' + ext)));
+    const lower = filename.toLowerCase();
+    let definition: (typeof contract.formats)[number] | undefined;
+    let dot = lower.indexOf('.');
+    while (dot !== -1) {
+      definition = FORMAT_BY_EXT.get(lower.slice(dot + 1));
+      if (definition) break;
+      dot = lower.indexOf('.', dot + 1);
+    }
     if (!definition) throw new Error('Unsupported input format: ' + filename);
     return { ...definition, filename };
   }
@@ -40,11 +52,12 @@ export async function detectFile(path: string): Promise<FormatInfo> {
 
 export async function getAvailableTargets(from: string): Promise<TargetFormatInfo[]> {
   if (!isTauri) {
-    const source = contract.formats.find(item => item.format === from);
+    const source = FORMAT_BY_ID.get(from);
+    const notices = source?.notices as Record<string, { vi: string; en: string }> | undefined;
     return (source?.targets ?? []).map(format => {
-      const item = contract.formats.find(item => item.format === format);
+      const item = FORMAT_BY_ID.get(format);
       if (!item) throw new Error('Missing format metadata: ' + format);
-      const notice = (source?.notices as Record<string, { vi: string; en: string }> | undefined)?.[format];
+      const notice = notices?.[format];
       return { format, label: item.label, extension: item.extension, category: item.category, available: true, notices: notice ? [notice] : [] };
     });
   }
@@ -55,12 +68,13 @@ export async function getBatchInfo(paths: string[]): Promise<BatchInfo> {
   if (!isTauri) {
     const files = await Promise.all(paths.map(detectFile));
     const targets = await Promise.all(files.map(file => getAvailableTargets(file.format)));
+    const targetMaps = targets.map(list => new Map(list.map(item => [item.format, item])));
     return {
       files,
       common_targets: (targets[0] ?? []).filter(target =>
-        targets.every(list => list.some(item => item.format === target.format))).map(target => ({
+        targetMaps.every(map => map.has(target.format))).map(target => ({
           ...target,
-          notices: [...new Map(targets.flatMap(list => list.find(item => item.format === target.format)?.notices ?? []).map(notice => [notice.en, notice])).values()],
+          notices: [...new Map(targetMaps.flatMap(map => map.get(target.format)?.notices ?? []).map(notice => [notice.en, notice])).values()],
         })),
     };
   }

@@ -156,6 +156,7 @@ fn get_media_duration(binary: &Path, input: &Path, cancel: &CancelToken) -> Opti
     }
     let mut child = ChildGuard(cmd.spawn().ok()?);
     let started = Instant::now();
+    let mut poll_ms = 2u64;
     loop {
         if cancel.is_cancelled() || started.elapsed() > Duration::from_secs(15) {
             return None;
@@ -166,7 +167,8 @@ fn get_media_duration(binary: &Path, input: &Path, cancel: &CancelToken) -> Opti
             }
             break;
         }
-        std::thread::sleep(Duration::from_millis(25));
+        std::thread::sleep(Duration::from_millis(poll_ms));
+        poll_ms = (poll_ms * 2).min(20);
     }
     log.rewind().ok()?;
     let mut text = String::new();
@@ -436,16 +438,19 @@ impl Converter for FfmpegConverter {
         let stderr_reader = std::thread::spawn(move || {
             let mut reader = stderr;
             let mut tail = std::collections::VecDeque::with_capacity(16384);
-            let mut buffer = [0; 4096];
+            let mut buffer = [0u8; 4096];
             loop {
                 match reader.read(&mut buffer) {
                     Ok(0) => break,
                     Ok(n) => {
-                        for &byte in &buffer[..n] {
-                            if tail.len() == 16384 {
-                                tail.pop_front();
-                            }
-                            tail.push_back(byte);
+                        let chunk = &buffer[..n];
+                        if chunk.len() >= 16384 {
+                            tail.clear();
+                            tail.extend(&chunk[chunk.len() - 16384..]);
+                        } else {
+                            let overflow = (tail.len() + chunk.len()).saturating_sub(16384);
+                            tail.drain(..overflow);
+                            tail.extend(chunk);
                         }
                     }
                     Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,

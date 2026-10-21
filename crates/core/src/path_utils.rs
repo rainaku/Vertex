@@ -19,7 +19,7 @@ pub fn ipc_path(raw: &str) -> std::result::Result<PathBuf, String> {
             .map_err(|e| e.to_string())?
             .to_file_path()
             .map_err(|_| "Invalid file URL".to_string())?;
-        if path.to_string_lossy().contains('\0') {
+        if path.as_os_str().as_encoded_bytes().contains(&0) {
             return Err("Invalid NUL character in file URL".into());
         }
         Ok(path)
@@ -72,18 +72,17 @@ fn safe_stem(input: &Path) -> String {
     if stem.is_empty() {
         stem.push_str("output");
     }
-    let base = stem.split('.').next().unwrap_or("").to_ascii_uppercase();
-    let reserved = matches!(
-        base.as_str(),
-        "CON" | "PRN" | "AUX" | "NUL" | "CONIN$" | "CONOUT$"
-    ) || ["COM", "LPT"].iter().any(|p| {
-        base.strip_prefix(p).is_some_and(|n| {
-            matches!(
-                n,
-                "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "¹" | "²" | "³"
-            )
-        })
-    });
+    let base = stem.split('.').next().unwrap_or("");
+    let reserved = ["CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$"]
+        .iter()
+        .any(|r| base.eq_ignore_ascii_case(r))
+        || base.get(..3).is_some_and(|prefix| {
+            (prefix.eq_ignore_ascii_case("COM") || prefix.eq_ignore_ascii_case("LPT"))
+                && matches!(
+                    &base[3..],
+                    "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "¹" | "²" | "³"
+                )
+        });
     if reserved {
         stem.insert(0, '_');
     }
@@ -93,17 +92,18 @@ fn safe_stem(input: &Path) -> String {
 /// This chooses a name, not a reservation. Publishing must still use an atomic
 /// no-clobber operation and retry on AlreadyExists for RenameWithSuffix.
 pub fn resolve_target_path(input: &Path, format: Format, opts: &Options) -> Result<PathBuf> {
-    let opts = opts.normalized();
     let directory = opts
         .output_dir
         .as_deref()
+        .filter(|p| !p.as_os_str().is_empty() && !p.to_string_lossy().trim().is_empty())
         .unwrap_or_else(|| parent_dir(input));
     std::fs::create_dir_all(directory).map_err(|source| VertexError::Io {
         path: directory.to_path_buf(),
         source,
     })?;
     let stem = safe_stem(input);
-    let candidate = directory.join(format!("{stem}.{}", format.extension()));
+    let ext = format.extension();
+    let mut candidate = directory.join(format!("{stem}.{ext}"));
     if !candidate.try_exists().map_err(|source| VertexError::Io {
         path: candidate.clone(),
         source,
@@ -127,12 +127,12 @@ pub fn resolve_target_path(input: &Path, format: Format, opts: &Options) -> Resu
         }
     }
     for counter in 1u64.. {
-        let next = directory.join(format!("{stem} ({counter}).{}", format.extension()));
-        if !next.try_exists().map_err(|source| VertexError::Io {
-            path: next.clone(),
+        candidate.set_file_name(format!("{stem} ({counter}).{ext}"));
+        if !candidate.try_exists().map_err(|source| VertexError::Io {
+            path: candidate.clone(),
             source,
         })? {
-            return Ok(next);
+            return Ok(candidate);
         }
     }
     unreachable!()
@@ -172,7 +172,8 @@ pub fn external_path(path: &Path) -> PathBuf {
         use std::path::{Component, Prefix};
         if let Some(Component::Prefix(prefix)) = path.components().next() {
             if let Prefix::VerbatimDisk(letter) = prefix.kind() {
-                let mut normal = PathBuf::from(format!("{}:\\", char::from(letter)));
+                let mut normal = PathBuf::with_capacity(path.as_os_str().len());
+                normal.push(format!("{}:\\", char::from(letter)));
                 for c in path.components().skip(1) {
                     if !matches!(c, Component::RootDir) {
                         normal.push(c.as_os_str());

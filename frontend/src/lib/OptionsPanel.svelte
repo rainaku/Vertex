@@ -9,6 +9,7 @@
   import { updateStore, checkForUpdates, installUpdate, openReleasePage } from './updater';
   import ElasticSlider from './ElasticSlider.svelte';
   import { soundEnabled, setSoundEnabled, playSound } from './sound';
+  import { theme, setTheme } from './theme';
   import { gsap } from 'gsap';
   import { enable, disable, isEnabled } from '@tauri-apps/plugin-autostart';
   import SlidersHorizontalIcon from 'phosphor-svelte/lib/SlidersHorizontalIcon';
@@ -21,8 +22,8 @@
   import GithubLogoIcon from 'phosphor-svelte/lib/GithubLogoIcon';
   import MagnifyingGlassIcon from 'phosphor-svelte/lib/MagnifyingGlassIcon';
   import XIcon from 'phosphor-svelte/lib/XIcon';
-  import ArrowSquareOutIcon from 'phosphor-svelte/lib/ArrowSquareOutIcon';
-  import ArrowsClockwiseIcon from 'phosphor-svelte/lib/ArrowsClockwiseIcon';
+  import ArrowUpRightIcon from 'phosphor-svelte/lib/ArrowUpRightIcon';
+  import ArrowClockwiseIcon from 'phosphor-svelte/lib/ArrowClockwiseIcon';
   import ArrowCounterClockwiseIcon from 'phosphor-svelte/lib/ArrowCounterClockwiseIcon';
   import CheckIcon from 'phosphor-svelte/lib/CheckIcon';
 
@@ -268,9 +269,11 @@
 
   // ── Settings Computations ───────────────────────────────────────────────────
 
-  $: backgroundHex = '#' + (draft.jpeg_background ?? [255, 255, 255])
-    .map(n => n.toString(16).padStart(2, '0'))
-    .join('');
+  let backgroundHex = '#ffffff';
+  $: {
+    const rgb = draft.jpeg_background ?? [255, 255, 255];
+    backgroundHex = '#' + ((1 << 24) | (rgb[0] << 16) | (rgb[1] << 8) | rgb[2]).toString(16).slice(1);
+  }
 
   $: activePreset =
     draft.quality === 80 && draft.max_width === 1920 && draft.max_height === 1920 && draft.avif_speed === 8
@@ -312,9 +315,10 @@
     }
   }
 
-  type SettingId = 'language' | 'sound' | 'profiles' | 'quality' | 'folder' | 'collision' | 'metadata' | 'background' | 'dimensions' | 'codec' | 'crf' | 'avif' | 'gif' | 'dpi' | 'audio' | 'preset';
+  type SettingId = 'language' | 'theme' | 'sound' | 'profiles' | 'quality' | 'folder' | 'collision' | 'metadata' | 'background' | 'dimensions' | 'codec' | 'crf' | 'avif' | 'gif' | 'dpi' | 'audio' | 'preset';
   const searchTerms: Record<SettingId, string> = {
     language: 'ngôn ngữ language tiếng việt english',
+    theme: 'giao diện chủ đề sáng tối theme light dark mode màu sắc',
     sound: 'âm thanh hiệu ứng sound effects sfx tiếng động mute',
     profiles: 'hồ sơ profile balanced web quality preset',
     quality: 'chất lượng quality jpg avif nén', folder: 'thư mục folder output đầu ra đích',
@@ -325,7 +329,7 @@
     audio: 'âm thanh audio bitrate kbps video', preset: 'preset cpu fast medium slow tốc độ encode video',
   };
   const sections: {tab: TabKey; vi: string; en: string; rows: SettingId[]}[] = [
-    {tab: 'general', vi: '', en: '', rows: ['language', 'sound']},
+    {tab: 'general', vi: '', en: '', rows: ['language', 'theme', 'sound']},
     {tab: 'general', vi: 'CẤU HÌNH NHANH', en: 'PRESETS', rows: ['profiles']},
     {tab: 'general', vi: 'THƯ MỤC & ĐÍCH ĐẾN', en: 'OUTPUT DESTINATION', rows: ['folder', 'collision']},
     {tab: 'image', vi: 'CHẤT LƯỢNG & NÉN HÌNH ẢNH', en: 'IMAGE QUALITY & COMPRESSION', rows: ['quality', 'metadata', 'background', 'avif', 'gif']},
@@ -333,13 +337,24 @@
     {tab: 'video', vi: 'MÃ HÓA VIDEO & ÂM THANH', en: 'VIDEO & AUDIO ENCODING', rows: ['codec', 'crf', 'preset', 'audio']},
     {tab: 'advanced', vi: 'TÀI LIỆU & ĐỒ HỌA VECTOR', en: 'PDF & VECTOR GRAPHICS', rows: ['dpi']},
   ];
-  $: isSearching = searchQuery.trim().length > 0;
-  $: lowerSearch = searchQuery.toLowerCase().trim();
-  $: hasMatchAutostart = 'khởi động cùng windows startup autostart boot start with windows'.includes(lowerSearch);
-  $: hasMatchShortcuts = 'phím tắt shortcut shift drag esc'.includes(lowerSearch);
-  $: visibleSections = sections.filter(section => isSearching || section.tab === activeTab)
-    .map(section => ({...section, rows: section.rows.filter(id => !isSearching || searchTerms[id].includes(lowerSearch))}))
-    .filter(section => section.rows.length > 0);
+  const SECTIONS_BY_TAB: Record<TabKey, typeof sections> = {
+    general: sections.filter(s => s.tab === 'general'),
+    image: sections.filter(s => s.tab === 'image'),
+    video: sections.filter(s => s.tab === 'video'),
+    advanced: sections.filter(s => s.tab === 'advanced'),
+    shortcuts: [],
+    about: [],
+  };
+  $: activeTabInfo = TABS.find(t => t.id === activeTab);
+  $: lowerSearch = searchQuery.trim().toLowerCase();
+  $: isSearching = lowerSearch.length > 0;
+  $: hasMatchAutostart = isSearching && 'khởi động cùng windows startup autostart boot start with windows'.includes(lowerSearch);
+  $: hasMatchShortcuts = isSearching && 'phím tắt shortcut shift drag esc'.includes(lowerSearch);
+  $: visibleSections = isSearching
+    ? sections
+        .map(section => ({ ...section, rows: section.rows.filter(id => searchTerms[id].includes(lowerSearch)) }))
+        .filter(section => section.rows.length > 0)
+    : SECTIONS_BY_TAB[activeTab];
 </script>
 {#snippet videoPresetControl()}
               <div class="setting-row">
@@ -385,6 +400,18 @@
                 <div class="seg">
                   <button type="button" class="seg-btn" class:seg-on={$language === 'vi'} on:click={() => handleLanguageChange('vi')}>Tiếng Việt</button>
                   <button type="button" class="seg-btn" class:seg-on={$language === 'en'} on:click={() => handleLanguageChange('en')}>English</button>
+                </div>
+              </div>
+{/snippet}
+{#snippet themeControl()}
+<div class="setting-row">
+                <div class="row-info">
+                  <span class="row-title">{$language === 'vi' ? 'Chủ đề giao diện' : 'Appearance'}</span>
+                  <span class="row-desc">{$language === 'vi' ? 'Chuyển đổi giữa giao diện Tối và Sáng.' : 'Switch between Dark and Light mode.'}</span>
+                </div>
+                <div class="seg">
+                  <button type="button" class="seg-btn" class:seg-on={$theme === 'dark'} on:click={() => { setTheme('dark'); playSound('petal_hover'); }}>{$language === 'vi' ? 'Tối' : 'Dark'}</button>
+                  <button type="button" class="seg-btn" class:seg-on={$theme === 'light'} on:click={() => { setTheme('light'); playSound('petal_hover'); }}>{$language === 'vi' ? 'Sáng' : 'Light'}</button>
                 </div>
               </div>
 {/snippet}
@@ -578,6 +605,7 @@
 {/snippet}
 {#snippet settingControl(id: SettingId)}
 {#if id === 'language'}{@render languageControl()}
+{:else if id === 'theme'}{@render themeControl()}
 {:else if id === 'sound'}{@render soundControl()}
 {:else if id === 'profiles'}{@render profilesControl()}
 {:else if id === 'quality'}{@render qualityControl()}
@@ -700,7 +728,7 @@
               {#if isSearching}
                 {$language === 'vi' ? 'Tìm kiếm' : 'Search'}
               {:else}
-                {$language === 'vi' ? TABS.find(t => t.id === activeTab)?.labelVi : TABS.find(t => t.id === activeTab)?.labelEn}
+                {$language === 'vi' ? activeTabInfo?.labelVi : activeTabInfo?.labelEn}
               {/if}
             </h2>
           </div>
@@ -768,35 +796,27 @@
             <div class="card">
               <div class="setting-row">
                 <div class="row-info">
-                  <span class="row-title">Vertex Radial Converter</span>
-                  <span class="row-desc">{$language === 'vi' ? 'Bộ công cụ chuyển đổi tệp đa phương tiện tức thì.' : 'Instant radial file conversion toolkit.'}</span>
-                </div>
-                <span class="badge-key">v{$updateStore.currentVersion}</span>
-              </div>
-              <div class="divider"></div>
-              <div class="setting-row">
-                <div class="row-info">
-                  <span class="row-title">{$language === 'vi' ? 'Kiến trúc lõi' : 'Core Architecture'}</span>
-                  <span class="row-desc">Rust Core Engine + Tauri 2 + Svelte 5 + GSAP</span>
-                </div>
-                <span class="badge-key">Rust + Tauri</span>
-              </div>
-              <div class="divider"></div>
-              <div class="setting-row">
-                <div class="row-info">
-                  <span class="row-title">GitHub Repository</span>
-                  <span class="row-desc">rainaku/Vertex</span>
+                  <span class="row-title">{$language === 'vi' ? 'Mã nguồn & Báo lỗi' : 'Source Code & Issue Tracker'}</span>
+                  <span class="row-desc">
+                    {$language === 'vi'
+                      ? 'Xem tài liệu hướng dẫn, báo lỗi chuyển đổi hoặc tải bản phát hành trên GitHub.'
+                      : 'Read documentation, report conversion issues, or download releases on GitHub.'}
+                  </span>
                 </div>
                 <button type="button" class="btn-subtle" on:click={() => openLink('https://github.com/rainaku/Vertex')}>
-                  <ArrowSquareOutIcon size={16} weight="fill" aria-hidden="true" />
-                  <span>{$language === 'vi' ? 'Mở GitHub' : 'Open GitHub'}</span>
+                  <span class="btn-icon"><ArrowUpRightIcon size={14} weight="bold" aria-hidden="true" /></span>
+                  <span class="btn-label">{$language === 'vi' ? 'Mở GitHub' : 'Open GitHub'}</span>
                 </button>
               </div>
               <div class="divider"></div>
               <div class="setting-row">
                 <div class="row-info">
-                  <span class="row-title">{$language === 'vi' ? 'Pháp lý & Quyền riêng tư' : 'Legal & Privacy'}</span>
-                  <span class="row-desc">{$language === 'vi' ? 'Xử lý cục bộ 100%, không thu thập dữ liệu cá nhân hay telemetry.' : '100% local processing, zero telemetry or personal data tracking.'}</span>
+                  <span class="row-title">{$language === 'vi' ? 'Giấy phép & Quyền riêng tư' : 'License & Privacy'}</span>
+                  <span class="row-desc">
+                    {$language === 'vi'
+                      ? 'Giấy phép nguồn mở Apache-2.0. Mọi tệp được chuyển đổi trực tiếp trên máy và không gửi qua mạng.'
+                      : 'Licensed under Apache-2.0. All files are converted locally on your device and never uploaded.'}
+                  </span>
                 </div>
                 <div class="legal-links">
                   <button type="button" class="btn-subtle" on:click={() => openLink('https://github.com/rainaku/Vertex/blob/main/docs/TERMS_OF_SERVICE.md')}>
@@ -866,10 +886,10 @@
                   >
                     {#if $updateStore.status === 'checking'}
                       <span class="spinner-inline"></span>
-                      <span>{$language === 'vi' ? 'Đang kiểm tra…' : 'Checking…'}</span>
+                      <span class="btn-label">{$language === 'vi' ? 'Đang kiểm tra…' : 'Checking…'}</span>
                     {:else}
-                      <ArrowsClockwiseIcon size={16} weight="bold" aria-hidden="true" />
-                      <span>{$language === 'vi' ? 'Kiểm tra cập nhật' : 'Check for Updates'}</span>
+                      <span class="btn-icon"><ArrowClockwiseIcon size={14} weight="bold" aria-hidden="true" /></span>
+                      <span class="btn-label">{$language === 'vi' ? 'Kiểm tra cập nhật' : 'Check for Updates'}</span>
                     {/if}
                   </button>
                 </div>
@@ -1506,10 +1526,15 @@
   }
 
   .btn-subtle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
     height: 32px;
     padding: 0 14px;
     font-size: 12px;
     font-weight: 700;
+    line-height: 1;
     color: #c8c8c8;
     background: rgba(255, 255, 255, 0.06);
     border: 1px solid rgba(255, 255, 255, 0.08);
@@ -1517,6 +1542,23 @@
     cursor: pointer;
     white-space: nowrap;
     transition: all 0.15s ease;
+  }
+
+  .btn-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transform: translateY(0.5px);
+  }
+
+  .btn-icon :global(svg) {
+    display: block;
+  }
+
+  .btn-label {
+    display: inline-block;
+    line-height: 1;
   }
 
   .btn-subtle:hover { background: rgba(255, 255, 255, 0.12); color: #ffffff; }
@@ -1862,14 +1904,227 @@
     cursor: not-allowed;
   }
 
-  button:focus-visible,
-  input:focus-visible,
-  .content-scroll :global([role="slider"]:focus-visible) {
-    outline: 2px solid #ffffff !important;
-    outline-offset: 2px;
-  }
-
   @keyframes spin {
     to { transform: rotate(360deg); }
+  }
+
+  /* ── Light Mode Overrides (Neutral Zinc — No Blue Tint, No Pure White) ──────── */
+  :global(:root[data-theme='light']) .panel-shadow {
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.25);
+  }
+  :global(:root[data-theme='light']) .panel {
+    background: #ececee;
+    color: #18181b;
+    border-color: #d4d4d8;
+  }
+  :global(:root[data-theme='light']) .sidebar {
+    background: #e4e4e7;
+    border-right-color: #d4d4d8;
+  }
+  :global(:root[data-theme='light']) .search-box {
+    background: #f4f4f5;
+    border-color: #d4d4d8;
+  }
+  :global(:root[data-theme='light']) .search-box:focus-within {
+    border-color: #52525b;
+    background: #f4f4f5;
+  }
+  :global(:root[data-theme='light']) .search-box :global(.search-icon) {
+    color: #71717a;
+  }
+  :global(:root[data-theme='light']) .search-input {
+    color: #18181b;
+  }
+  :global(:root[data-theme='light']) .search-input::placeholder {
+    color: #71717a;
+  }
+  :global(:root[data-theme='light']) .btn-clear-search {
+    color: #71717a;
+  }
+  :global(:root[data-theme='light']) .btn-clear-search:hover {
+    color: #18181b;
+  }
+  :global(:root[data-theme='light']) .nav-item {
+    color: #52525b;
+  }
+  :global(:root[data-theme='light']) .nav-item:hover {
+    background: rgba(24, 24, 27, 0.06);
+    color: #18181b;
+  }
+  :global(:root[data-theme='light']) .nav-item.nav-active {
+    background: #f4f4f5;
+    color: #18181b;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+  }
+  :global(:root[data-theme='light']) .sidebar-footer {
+    border-top-color: #d4d4d8;
+  }
+  :global(:root[data-theme='light']) .btn-social {
+    color: #52525b;
+  }
+  :global(:root[data-theme='light']) .btn-social:hover {
+    color: #18181b;
+  }
+  :global(:root[data-theme='light']) .build-tag {
+    color: #71717a;
+  }
+  :global(:root[data-theme='light']) .content-area {
+    background: #ececee;
+  }
+  :global(:root[data-theme='light']) .content-header {
+    background: #f4f4f5;
+    border-bottom-color: #d4d4d8;
+  }
+  :global(:root[data-theme='light']) .hero-title {
+    color: #18181b;
+  }
+  :global(:root[data-theme='light']) .btn-close {
+    background: #e4e4e7;
+    color: #3f3f46;
+    border-color: #d4d4d8;
+  }
+  :global(:root[data-theme='light']) .btn-close:hover {
+    background: #d4d4d8;
+    color: #18181b;
+  }
+  :global(:root[data-theme='light']) .content-scroll {
+    scrollbar-color: #a1a1aa transparent;
+  }
+  :global(:root[data-theme='light']) .content-scroll::-webkit-scrollbar-thumb {
+    background: #a1a1aa;
+  }
+  :global(:root[data-theme='light']) .section-title {
+    color: #52525b;
+  }
+  :global(:root[data-theme='light']) .card {
+    background: #f4f4f5;
+    border-color: #d4d4d8;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  }
+  :global(:root[data-theme='light']) .control-group + .control-group {
+    border-top-color: #e4e4e7;
+  }
+  :global(:root[data-theme='light']) .divider {
+    background: #e4e4e7;
+  }
+  :global(:root[data-theme='light']) .row-title,
+  :global(:root[data-theme='light']) .empty-title {
+    color: #18181b;
+  }
+  :global(:root[data-theme='light']) .row-desc,
+  :global(:root[data-theme='light']) .empty-sub {
+    color: #52525b;
+  }
+  :global(:root[data-theme='light']) .switch .slider {
+    background: #d4d4d8;
+    border-color: #a1a1aa;
+  }
+  :global(:root[data-theme='light']) .switch .slider::before {
+    background: #f4f4f5;
+  }
+  :global(:root[data-theme='light']) .seg {
+    background: #e4e4e7;
+    border-color: #d4d4d8;
+  }
+  :global(:root[data-theme='light']) .seg-btn {
+    color: #52525b;
+  }
+  :global(:root[data-theme='light']) .seg-btn:hover {
+    color: #18181b;
+  }
+  :global(:root[data-theme='light']) .seg-btn.seg-on {
+    background: #f4f4f5;
+    color: #18181b;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+  }
+  :global(:root[data-theme='light']) .seg-btn.seg-danger.seg-on {
+    background: #fecaca;
+    color: #991b1b;
+  }
+  :global(:root[data-theme='light']) .chip {
+    color: #3f3f46;
+    background: #e4e4e7;
+    border-color: #d4d4d8;
+  }
+  :global(:root[data-theme='light']) .chip:hover {
+    background: #d4d4d8;
+    color: #18181b;
+  }
+  :global(:root[data-theme='light']) .chip.chip-on {
+    background: #18181b;
+    border-color: #18181b;
+    color: #f4f4f5;
+  }
+  :global(:root[data-theme='light']) .folder-path,
+  :global(:root[data-theme='light']) .input-cell {
+    background: #e4e4e7;
+    border-color: #d4d4d8;
+    color: #27272a;
+  }
+  :global(:root[data-theme='light']) .input-cell:focus-within {
+    border-color: #52525b;
+    background: #ececee;
+  }
+  :global(:root[data-theme='light']) .input-tag {
+    color: #52525b;
+    background: #dcdce0;
+    border-right-color: #d4d4d8;
+  }
+  :global(:root[data-theme='light']) .num-input,
+  :global(:root[data-theme='light']) .swatch-hex {
+    color: #18181b;
+  }
+  :global(:root[data-theme='light']) .swatch-pill {
+    background: #e4e4e7;
+    border-color: #d4d4d8;
+  }
+  :global(:root[data-theme='light']) .swatch-dot {
+    border-color: #71717a;
+  }
+  :global(:root[data-theme='light']) .btn-subtle,
+  :global(:root[data-theme='light']) .badge-key {
+    color: #27272a;
+    background: #e4e4e7;
+    border-color: #d4d4d8;
+  }
+  :global(:root[data-theme='light']) .btn-subtle:hover {
+    background: #d4d4d8;
+    color: #18181b;
+  }
+  :global(:root[data-theme='light']) .footer {
+    background: #f4f4f5;
+    border-top-color: #d4d4d8;
+  }
+  :global(:root[data-theme='light']) .btn-reset {
+    color: #52525b;
+  }
+  :global(:root[data-theme='light']) .btn-reset:hover {
+    color: #18181b;
+  }
+  :global(:root[data-theme='light']) .btn-apply {
+    color: #27272a;
+    background: #e4e4e7;
+    border-color: #d4d4d8;
+  }
+  :global(:root[data-theme='light']) .btn-apply:hover {
+    background: #d4d4d8;
+    color: #18181b;
+  }
+  :global(:root[data-theme='light']) .btn-save {
+    color: #f4f4f5;
+    background: #18181b;
+  }
+  :global(:root[data-theme='light']) .btn-save:hover {
+    background: #27272a;
+  }
+  :global(:root[data-theme='light']) .update-notes-box {
+    background: #e4e4e7;
+    border-color: #d4d4d8;
+  }
+  :global(:root[data-theme='light']) .update-notes-title {
+    color: #52525b;
+  }
+  :global(:root[data-theme='light']) .update-notes-content {
+    color: #18181b;
   }
 </style>

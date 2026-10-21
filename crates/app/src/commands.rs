@@ -51,20 +51,24 @@ pub struct AppState {
     pub active_cancels: Arc<Mutex<std::collections::HashMap<String, CancelToken>>>,
 }
 
-static APP_LANGUAGE: Mutex<&'static str> = Mutex::new("vi");
+static IS_ENGLISH: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 pub fn current_language() -> &'static str {
-    *APP_LANGUAGE.lock().unwrap_or_else(|p| p.into_inner())
+    if IS_ENGLISH.load(std::sync::atomic::Ordering::Relaxed) {
+        "en"
+    } else {
+        "vi"
+    }
 }
 
 #[tauri::command]
 pub fn set_app_language(language: String) -> Result<(), String> {
-    let lang = match language.as_str() {
-        "vi" => "vi",
-        "en" => "en",
+    let is_en = match language.as_str() {
+        "vi" => false,
+        "en" => true,
         _ => return Err("Unsupported language".into()),
     };
-    *APP_LANGUAGE.lock().unwrap_or_else(|p| p.into_inner()) = lang;
+    IS_ENGLISH.store(is_en, std::sync::atomic::Ordering::Relaxed);
     Ok(())
 }
 
@@ -157,7 +161,9 @@ pub async fn get_batch_info(
                 category: fmt.category(),
                 filename,
             });
-            formats.push(fmt);
+            if !formats.contains(&fmt) {
+                formats.push(fmt);
+            }
         }
 
         let common = registry.batch_targets(&formats);
@@ -279,18 +285,30 @@ pub async fn convert_file(
     };
     let event_app = app.clone();
     let event_job = job_id.clone();
-    let last_emit = Mutex::new(std::time::Instant::now() - std::time::Duration::from_secs(1));
+    let last_emit = Mutex::new((
+        std::time::Instant::now() - std::time::Duration::from_secs(1),
+        -1.0f32,
+    ));
     let progress = move |p: f32| {
-        let mut last = last_emit.lock().unwrap_or_else(|p| p.into_inner());
-        if !p.is_finite() || last.elapsed() < std::time::Duration::from_millis(50) {
+        if !p.is_finite() {
             return;
         }
-        *last = std::time::Instant::now();
+        let clamped = p.clamp(0.0, 0.99);
+        let now = std::time::Instant::now();
+        {
+            let mut last = last_emit.lock().unwrap_or_else(|p| p.into_inner());
+            if (clamped - last.1).abs() < 0.002
+                || now.duration_since(last.0) < std::time::Duration::from_millis(50)
+            {
+                return;
+            }
+            *last = (now, clamped);
+        }
         let _ = event_app.emit(
             "convert_progress",
             ProgressPayload {
                 job_id: &event_job,
-                progress: p.clamp(0.0, 0.99),
+                progress: clamped,
                 status: "converting",
             },
         );
@@ -420,6 +438,11 @@ pub fn set_converting_state(converting: bool) {
 /// capture input; hiding the HWND is the only way to pass input to the desktop.
 #[tauri::command]
 pub async fn set_window_passthrough(app: AppHandle, passthrough: bool) -> Result<(), String> {
+    if let Some(win) = app.get_webview_window("main") {
+        if crate::wheel_window::is_native_configured(&win) {
+            return Ok(());
+        }
+    }
     on_main_window(app, move |win| {
         crate::wheel_window::set_passthrough(&win, passthrough)
     })

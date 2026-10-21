@@ -1,4 +1,4 @@
-import { writable, get } from 'svelte/store';
+import { writable } from 'svelte/store';
 
 export const SOUND_KEY = 'vertex.sound-enabled.v1';
 
@@ -20,10 +20,14 @@ function loadSoundPreference(): boolean {
   return true;
 }
 
-export const soundEnabled = writable<boolean>(loadSoundPreference());
+let soundEnabledValue = loadSoundPreference();
+export const soundEnabled = writable<boolean>(soundEnabledValue);
+soundEnabled.subscribe((value) => {
+  soundEnabledValue = value;
+});
 
 export function isSoundEnabled(): boolean {
-  return get(soundEnabled);
+  return soundEnabledValue;
 }
 
 export function setSoundEnabled(enabled: boolean): void {
@@ -86,12 +90,16 @@ function scheduleTone(
 
   osc.connect(gainNode);
   gainNode.connect(ctx.destination);
+  osc.onended = () => {
+    osc.disconnect();
+    gainNode.disconnect();
+  };
   osc.start(opts.startTime);
   osc.stop(opts.startTime + opts.duration + 0.005);
 }
 
 export function playSound(effect: SoundEffect): void {
-  if (!get(soundEnabled)) return;
+  if (!soundEnabledValue) return;
 
   if (effect === 'petal_hover') {
     const nowMs = performance.now();

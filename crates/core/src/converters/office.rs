@@ -143,13 +143,19 @@ fn table_import_filter(path: &Path, format: Format) -> Result<String> {
             "Workbook input exceeds 16,384 columns".into(),
         ));
     }
-    let formats = (1..=columns)
-        .map(|column| format!("{column}/2"))
-        .collect::<Vec<_>>()
-        .join("/");
     // CSV has no type system: retain leading zeroes, large integers and formula-
     // looking text, rather than evaluating formulas during import.
-    Ok(format!("Text - txt - csv (StarCalc):{delimiter},34,76,1,{formats},0,true,false,false,false,false,0,false,false,false"))
+    use std::fmt::Write as _;
+    let mut filter = String::with_capacity(96 + columns * 6);
+    let _ = write!(filter, "Text - txt - csv (StarCalc):{delimiter},34,76,1,");
+    for column in 1..=columns {
+        if column > 1 {
+            filter.push('/');
+        }
+        let _ = write!(filter, "{column}/2");
+    }
+    filter.push_str(",0,true,false,false,false,false,0,false,false,false");
+    Ok(filter)
 }
 
 impl Converter for OfficeConverter {

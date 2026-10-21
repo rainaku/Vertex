@@ -6,7 +6,7 @@ members = [
 ]
 
 [workspace.package]
-version = "1.2.1"
+version = "1.2.2"
 edition = "2021"
 authors = ["rainaku"]
 license = "Apache-2.0"
@@ -42,7 +42,7 @@ codegen-units = 1
 strip = "symbols"
 
 [profile.release.package.vertex-core]
-codegen-units = 16
+codegen-units = 1
 
 [profile.release.package.vertex-app]
 codegen-units = 16
