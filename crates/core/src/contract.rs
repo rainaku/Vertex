@@ -36,6 +36,11 @@ pub fn conversion_notice(from: Format, to: Format) -> Option<ConversionNotice> {
             "Trích xuất chữ toàn bộ PDF, giữ khoảng cách tương đối; mất font, ảnh và định dạng bảng. Không OCR.",
             "Extracts text from all PDF pages with approximate spacing; fonts, images and table formatting are lost. No OCR.",
         )
+    } else if matches!(from, Format::Docm | Format::Dotm) {
+        (
+            "Chuyển nội dung tài liệu; macro không chạy và không hỗ trợ bảo toàn macro. TXT không giữ định dạng.",
+            "Converts document content; macros are disabled and macro preservation is not supported. TXT does not retain formatting.",
+        )
     } else if from.category() == Category::Document && to == Format::Txt {
         (
             "TXT chỉ giữ văn bản; không lưu font, màu, ảnh hoặc định dạng bảng.",
@@ -47,7 +52,17 @@ pub fn conversion_notice(from: Format, to: Format) -> Option<ConversionNotice> {
             "Exports document layout; install the original fonts to reduce font substitution and pagination changes.",
         )
     } else if from.category() == Category::Document
-        && matches!(to, Format::Doc | Format::Docx | Format::Odt | Format::Rtf | Format::Html)
+        && matches!(
+            to,
+            Format::Doc
+                | Format::Docx
+                | Format::Dotx
+                | Format::Odt
+                | Format::Ott
+                | Format::Fodt
+                | Format::Rtf
+                | Format::Html
+        )
         && !matches!(from, Format::Txt | Format::Md)
     {
         (

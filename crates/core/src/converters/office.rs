@@ -11,7 +11,17 @@ pub struct OfficeConverter;
 const DOCUMENTS: &[Format] = &[
     Format::Doc,
     Format::Docx,
+    Format::Docm,
+    Format::Dot,
+    Format::Dotx,
+    Format::Dotm,
     Format::Odt,
+    Format::Ott,
+    Format::Fodt,
+    Format::Sxw,
+    Format::Wps,
+    Format::Wpd,
+    Format::Wri,
     Format::Rtf,
     Format::Txt,
     Format::Html,
@@ -28,7 +38,17 @@ const SLIDES: &[Format] = &[Format::Pptx, Format::Ppt, Format::Odp];
 const SOURCES: &[Format] = &[
     Format::Doc,
     Format::Docx,
+    Format::Docm,
+    Format::Dot,
+    Format::Dotx,
+    Format::Dotm,
     Format::Odt,
+    Format::Ott,
+    Format::Fodt,
+    Format::Sxw,
+    Format::Wps,
+    Format::Wpd,
+    Format::Wri,
     Format::Rtf,
     Format::Txt,
     Format::Html,
@@ -66,7 +86,10 @@ fn export_filter(target: Format, source: Format) -> &'static str {
         Format::Pdf => "pdf:writer_pdf_Export",
         Format::Doc => "doc:MS Word 97",
         Format::Docx => "docx:Office Open XML Text",
+        Format::Dotx => "dotx:Office Open XML Text Template",
         Format::Odt => "odt:writer8",
+        Format::Ott => "ott:writer8_template",
+        Format::Fodt => "fodt:OpenDocument Text Flat XML",
         Format::Rtf => "rtf:Rich Text Format",
         Format::Txt => "txt:Text (encoded):UTF8",
         Format::Html => "html:HTML (StarWriter):EmbedImages",
@@ -84,6 +107,22 @@ fn export_filter(target: Format, source: Format) -> &'static str {
         Format::Odp => "odp:impress8",
         _ => unreachable!(),
     }
+}
+
+fn document_import_filter(format: Format) -> Option<&'static str> {
+    Some(match format {
+        Format::Docm => "MS Word 2007 XML VBA",
+        Format::Dot => "MS Word 97 Vorlage",
+        Format::Dotx => "Office Open XML Text Template",
+        Format::Dotm => "MS Word 2007 XML Template",
+        Format::Ott => "writer8_template",
+        Format::Fodt => "OpenDocument Text Flat XML",
+        Format::Sxw => "StarOffice XML (Writer)",
+        Format::Wps => "MS_Works",
+        Format::Wpd => "WordPerfect",
+        Format::Wri => "MS_Write",
+        _ => return None,
+    })
 }
 
 fn table_import_filter(path: &Path, format: Format) -> Result<String> {
@@ -125,7 +164,10 @@ impl Converter for OfficeConverter {
             vec![
                 Format::Doc,
                 Format::Docx,
+                Format::Dotx,
                 Format::Odt,
+                Format::Ott,
+                Format::Fodt,
                 Format::Rtf,
                 Format::Txt,
                 Format::Html,
@@ -223,6 +265,8 @@ impl Converter for OfficeConverter {
             ));
         } else if input.format == Format::Txt {
             command.arg("--infilter=Text (encoded):UTF8,LF");
+        } else if let Some(filter) = document_import_filter(input.format) {
+            command.arg(format!("--infilter={filter}"));
         }
         let log = run_tool(
             command

@@ -32,7 +32,17 @@ pub enum Format {
     Pdf,
     Doc,
     Docx,
+    Docm,
+    Dot,
+    Dotx,
+    Dotm,
     Odt,
+    Ott,
+    Fodt,
+    Sxw,
+    Wps,
+    Wpd,
+    Wri,
     Rtf,
     Txt,
     Md,
@@ -101,7 +111,17 @@ impl Format {
         Self::Pdf,
         Self::Doc,
         Self::Docx,
+        Self::Docm,
+        Self::Dot,
+        Self::Dotx,
+        Self::Dotm,
         Self::Odt,
+        Self::Ott,
+        Self::Fodt,
+        Self::Sxw,
+        Self::Wps,
+        Self::Wpd,
+        Self::Wri,
         Self::Rtf,
         Self::Txt,
         Self::Md,
@@ -148,9 +168,9 @@ impl Format {
             Self::Heic => &["heif"],
             Self::Tiff => &["tif"],
             Self::Bmp => &["dib"],
-            Self::Txt => &["text", "log"],
-            Self::Md => &["markdown"],
-            Self::Html => &["htm"],
+            Self::Txt => &["text", "log", "nfo", "asc"],
+            Self::Md => &["markdown", "mdown", "mkd", "mdwn"],
+            Self::Html => &["htm", "xhtml", "xht"],
             Self::Yaml => &["yml"],
             Self::Ogg => &["oga"],
             Self::Aiff => &["aif"],
@@ -183,7 +203,17 @@ impl Format {
             Format::Pdf => "PDF",
             Format::Doc => "DOC",
             Format::Docx => "DOCX",
+            Format::Docm => "DOCM",
+            Format::Dot => "DOT",
+            Format::Dotx => "DOTX",
+            Format::Dotm => "DOTM",
             Format::Odt => "ODT",
+            Format::Ott => "OTT",
+            Format::Fodt => "FODT",
+            Format::Sxw => "SXW",
+            Format::Wps => "WPS",
+            Format::Wpd => "WPD",
+            Format::Wri => "WRI",
             Format::Rtf => "RTF",
             Format::Txt => "TXT",
             Format::Md => "MD",
@@ -240,7 +270,17 @@ impl Format {
             Format::Pdf => "pdf",
             Format::Doc => "doc",
             Format::Docx => "docx",
+            Format::Docm => "docm",
+            Format::Dot => "dot",
+            Format::Dotx => "dotx",
+            Format::Dotm => "dotm",
             Format::Odt => "odt",
+            Format::Ott => "ott",
+            Format::Fodt => "fodt",
+            Format::Sxw => "sxw",
+            Format::Wps => "wps",
+            Format::Wpd => "wpd",
+            Format::Wri => "wri",
             Format::Rtf => "rtf",
             Format::Txt => "txt",
             Format::Md => "md",
@@ -298,7 +338,17 @@ impl Format {
             Format::Pdf
             | Format::Doc
             | Format::Docx
+            | Format::Docm
+            | Format::Dot
+            | Format::Dotx
+            | Format::Dotm
             | Format::Odt
+            | Format::Ott
+            | Format::Fodt
+            | Format::Sxw
+            | Format::Wps
+            | Format::Wpd
+            | Format::Wri
             | Format::Rtf
             | Format::Txt
             | Format::Md
@@ -395,6 +445,17 @@ impl Format {
                 Some(Format::Docx)
             }
             "application/vnd.oasis.opendocument.text" => Some(Format::Odt),
+            "application/vnd.ms-word.document.macroenabled.12" => Some(Format::Docm),
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.template" => {
+                Some(Format::Dotx)
+            }
+            "application/vnd.ms-word.template.macroenabled.12" => Some(Format::Dotm),
+            "application/vnd.oasis.opendocument.text-template" => Some(Format::Ott),
+            "application/vnd.oasis.opendocument.text-flat-xml" => Some(Format::Fodt),
+            "application/vnd.sun.xml.writer" => Some(Format::Sxw),
+            "application/vnd.ms-works" => Some(Format::Wps),
+            "application/vnd.wordperfect" | "application/wordperfect" => Some(Format::Wpd),
+            "application/x-mswrite" => Some(Format::Wri),
             "application/rtf" | "text/rtf" => Some(Format::Rtf),
             "text/plain" => Some(Format::Txt),
             "text/markdown" | "text/x-markdown" => Some(Format::Md),

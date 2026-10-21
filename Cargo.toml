@@ -6,10 +6,10 @@ members = [
 ]
 
 [workspace.package]
-version = "1.2.0"
+version = "1.2.1"
 edition = "2021"
-authors = ["Vertex Team"]
-license = "MIT OR Apache-2.0"
+authors = ["rainaku"]
+license = "Apache-2.0"
 
 [workspace.dependencies]
 serde = { version = "1.0", features = ["derive"] }
@@ -40,3 +40,9 @@ opt-level = 3
 lto = "thin"
 codegen-units = 1
 strip = "symbols"
+
+[profile.release.package.vertex-core]
+codegen-units = 16
+
+[profile.release.package.vertex-app]
+codegen-units = 16

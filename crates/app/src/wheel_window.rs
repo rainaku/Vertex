@@ -1,4 +1,4 @@
-//! Native window policy shared by the drag detector, tray and IPC commands.
+//! Native window policy shared by the drag detector and IPC commands.
 use std::sync::atomic::{AtomicU32, Ordering};
 use tauri::{Emitter, PhysicalPosition, WebviewWindow};
 
@@ -72,7 +72,7 @@ pub fn set_passthrough(window: &WebviewWindow, _passthrough: bool) -> Result<(),
 }
 
 /// Called on the UI thread. Drag summons must not activate the window, since
-/// Explorer still owns the OLE drag session. Tray/IPC summons may take focus.
+/// Explorer still owns the OLE drag session. Settings may take focus.
 pub fn show(
     window: &WebviewWindow,
     position: Option<PhysicalPosition<i32>>,
@@ -156,16 +156,6 @@ pub fn hide(window: &WebviewWindow) -> Result<(), String> {
     #[cfg(not(target_os = "windows"))]
     window.hide().map_err(|e| e.to_string())?;
     Ok(())
-}
-
-pub fn toggle(window: &WebviewWindow) -> Result<(), String> {
-    if window.is_visible().map_err(|e| e.to_string())? {
-        window
-            .emit("wheel_close_requested", ())
-            .map_err(|e| e.to_string())
-    } else {
-        show(window, None, true)
-    }
 }
 
 pub fn invalidate_close() {

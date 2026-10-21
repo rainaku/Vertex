@@ -46,8 +46,10 @@ pub fn detect_format<P: AsRef<Path>>(path: P) -> Result<Format> {
     if bytes.starts_with(b"PK\x03\x04") || bytes.starts_with(b"PK\x05\x06") {
         file.rewind().map_err(io)?;
         if let Ok(mut archive) = zip::ZipArchive::new(&mut file) {
+            if archive.index_for_name("word/document.xml").is_some() {
+                return Ok(word_package_format(&mut archive, extension));
+            }
             for (name, format) in [
-                ("word/document.xml", Format::Docx),
                 ("xl/workbook.xml", Format::Xlsx),
                 ("ppt/presentation.xml", Format::Pptx),
             ] {
@@ -151,6 +153,20 @@ pub fn detect_format<P: AsRef<Path>>(path: P) -> Result<Format> {
                         if e.local_name().as_ref().eq_ignore_ascii_case("html") {
                             return Ok(Format::Html);
                         }
+                        if e.local_name().as_ref() == "document" {
+                            let attributes: Vec<_> = e.attributes().flatten().collect();
+                            let office_namespace = attributes.iter().any(|a| {
+                                a.value.as_ref()
+                                    == "urn:oasis:names:tc:opendocument:xmlns:office:1.0"
+                            });
+                            let text_mimetype = attributes.iter().any(|a| {
+                                a.key.local_name().as_ref() == "mimetype"
+                                    && a.value.as_ref() == "application/vnd.oasis.opendocument.text"
+                            });
+                            if office_namespace && text_mimetype {
+                                return Ok(Format::Fodt);
+                            }
+                        }
                         break;
                     }
                     Ok(quick_xml::events::Event::DocType(e)) => {
@@ -206,6 +222,7 @@ pub fn detect_format<P: AsRef<Path>>(path: P) -> Result<Format> {
             return Ok(match (format, extension) {
                 (Format::Wmv, Some(Format::Wma)) => Format::Wma,
                 (Format::Ogg, Some(Format::Opus)) => Format::Opus,
+                (Format::Doc, Some(Format::Dot)) => Format::Dot,
                 _ => format,
             });
         }
@@ -214,6 +231,49 @@ pub fn detect_format<P: AsRef<Path>>(path: P) -> Result<Format> {
         return Ok(Format::Mp3);
     }
     extension.ok_or_else(|| VertexError::UnrecognizedFormat(path.to_path_buf()))
+}
+
+// OOXML documents and templates share word/document.xml. Inspect the declared
+// main-part MIME type so renamed files still select the correct import filter.
+fn word_package_format<R: Read + Seek>(
+    archive: &mut zip::ZipArchive<R>,
+    extension: Option<Format>,
+) -> Format {
+    let mut xml = String::new();
+    if let Ok(entry) = archive.by_name("[Content_Types].xml") {
+        if entry.take(64 * 1024).read_to_string(&mut xml).is_ok() {
+            let mut reader = quick_xml::Reader::from_str(&xml);
+            loop {
+                match reader.read_event() {
+                    Ok(
+                        quick_xml::events::Event::Start(tag) | quick_xml::events::Event::Empty(tag),
+                    ) if tag.local_name().as_ref() == "Override" => {
+                        let attributes: Vec<_> = tag.attributes().flatten().collect();
+                        if !attributes.iter().any(|a| {
+                            a.key.as_ref() == "PartName" && a.value.as_ref() == "/word/document.xml"
+                        }) {
+                            continue;
+                        }
+                        if let Some(content_type) =
+                            attributes.iter().find(|a| a.key.as_ref() == "ContentType")
+                        {
+                            return match content_type.value.as_ref() {
+                                "application/vnd.ms-word.document.macroEnabled.main+xml" => Format::Docm,
+                                "application/vnd.ms-word.template.macroEnabledTemplate.main+xml" => Format::Dotm,
+                                "application/vnd.openxmlformats-officedocument.wordprocessingml.template.main+xml" => Format::Dotx,
+                                _ => Format::Docx,
+                            };
+                        }
+                    }
+                    Ok(quick_xml::events::Event::Eof) | Err(_) => break,
+                    _ => {}
+                }
+            }
+        }
+    }
+    extension
+        .filter(|f| matches!(f, Format::Docm | Format::Dotx | Format::Dotm))
+        .unwrap_or(Format::Docx)
 }
 
 fn ebml_vint(bytes: &[u8]) -> Option<(usize, usize)> {

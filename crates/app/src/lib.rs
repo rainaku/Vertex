@@ -4,11 +4,10 @@ pub mod drag_detector;
 mod drag_gesture;
 mod logging;
 mod wheel_window;
+mod tray_menu;
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use tauri::menu::{Menu, MenuItem};
-use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{Emitter, Manager};
 use tracing::info;
 use vertex_core::Registry;
@@ -108,72 +107,17 @@ pub fn run() {
             reveal_in_explorer,
             hide_wheel_window,
             force_hide_wheel_window,
-            show_wheel_window,
             set_window_passthrough,
             set_converting_state,
             set_app_language,
+            tray_menu::get_tray_state,
+            tray_menu::tray_action,
             center_window,
             prepare_settings_window,
             restore_wheel_window,
         ])
         .setup(|app| {
-            // Build Tray Menu
-            let toggle_i =
-                MenuItem::with_id(app, "toggle", "Hiện / ẩn Vertex", true, None::<&str>)?;
-            let quit_i = MenuItem::with_id(app, "quit", "Thoát Vertex", true, None::<&str>)?;
-            let settings_i =
-                MenuItem::with_id(app, "settings", "Cài đặt nâng cao…", true, None::<&str>)?;
-            let tray_menu = Menu::with_items(app, &[&toggle_i, &settings_i, &quit_i])?;
-            app.manage(LanguageMenu {
-                toggle: toggle_i,
-                settings: settings_i,
-                quit: quit_i,
-            });
-
-            let _tray = TrayIconBuilder::with_id("vertex")
-                .icon(app.default_window_icon().ok_or_else(|| std::io::Error::other("Missing Vertex app icon"))?.clone())
-                .menu(&tray_menu)
-                .show_menu_on_left_click(false)
-                .tooltip("Vertex")
-                .on_menu_event(|app, event| match event.id().as_ref() {
-                    "toggle" => {
-                        if let Some(win) = app.get_webview_window("main") {
-                            if let Err(error) = wheel_window::toggle(&win) {
-                                tracing::warn!(%error, "Could not toggle wheel from tray menu");
-                            }
-                        }
-                    }
-                    "settings" => {
-                        if let Some(win) = app.get_webview_window("main") {
-                            if let Err(error) =
-                                win.emit("open_advanced_settings", ())
-                                        .map_err(|e| e.to_string())
-                            {
-                                tracing::warn!(%error, "Could not open advanced settings");
-                            }
-                        }
-                    }
-                    "quit" => {
-                        app.exit(0);
-                    }
-                    _ => {}
-                })
-                .on_tray_icon_event(|tray, event| {
-                    if let TrayIconEvent::Click {
-                        button: MouseButton::Left,
-                        button_state: MouseButtonState::Up,
-                        ..
-                    } = event
-                    {
-                        let app = tray.app_handle();
-                        if let Some(win) = app.get_webview_window("main") {
-                            if let Err(error) = wheel_window::toggle(&win) {
-                                tracing::warn!(%error, "Could not toggle wheel from tray icon");
-                            }
-                        }
-                    }
-                })
-                .build(app)?;
+            tray_menu::setup(app)?;
 
             // Hidden native windows already let mouse input reach the desktop.
             if let Some(window) = app.get_webview_window("main") {

@@ -25,6 +25,8 @@ $BundleDir = Join-Path $WorkspaceRoot "target\release\bundle"
 . (Join-Path $WorkspaceRoot 'scripts\BuildTools.ps1')
 $origTauriSigningPrivateKey = $env:TAURI_SIGNING_PRIVATE_KEY
 $origTauriSigningPrivateKeyPassword = $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD
+$origCargoBuildJobs = $env:CARGO_BUILD_JOBS
+$env:CARGO_BUILD_JOBS = [string][Environment]::ProcessorCount
 Push-Location $WorkspaceRoot
 try {
 
@@ -63,6 +65,17 @@ try {
     Get-CimInstance Win32_Process -Filter "Name like '%webview2%'" -ErrorAction SilentlyContinue |
         Where-Object { $_.CommandLine -like "*vertex*" } |
         ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+} catch {}
+
+# Don dep cac tien trinh cargo/rustc cu cua workspace bi treo giu file lock tren thu muc target
+try {
+    $escapedRoot = [regex]::Escape($WorkspaceRoot)
+    Get-CimInstance Win32_Process -Filter "Name = 'cargo.exe' OR Name = 'rustc.exe'" -ErrorAction SilentlyContinue |
+        Where-Object { $_.CommandLine -match $escapedRoot -or $_.CommandLine -match 'tauri/custom-protocol' } |
+        ForEach-Object {
+            Write-Host "    Dung tien trinh build cu dang giu lock: $($_.Name) (PID $($_.ProcessId))" -ForegroundColor Yellow
+            & taskkill.exe /PID $_.ProcessId /T /F 2>$null | Out-Null
+        }
 } catch {}
 
 # --- 2. Kiem tra cong cu he thong ---
@@ -184,7 +197,7 @@ if ($foundInstallers.Count -gt 0) {
     
     # Lay phien ban tu tauri.conf.json hoac Cargo.toml
     $tauriConfPath = Join-Path $WorkspaceRoot "crates\app\tauri.conf.json"
-    $appVersion = "1.2.0"
+    $appVersion = "1.2.1"
     if (Test-Path $tauriConfPath) {
         try {
             $confJson = Get-Content $tauriConfPath -Raw | ConvertFrom-Json
@@ -351,5 +364,6 @@ Write-Host ""
 } finally {
     $env:TAURI_SIGNING_PRIVATE_KEY = $origTauriSigningPrivateKey
     $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = $origTauriSigningPrivateKeyPassword
+    $env:CARGO_BUILD_JOBS = $origCargoBuildJobs
     Pop-Location
 }

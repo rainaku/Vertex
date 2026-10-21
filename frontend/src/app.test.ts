@@ -52,7 +52,9 @@ it('opening Settings invalidates a pending wheel exit and releases all native li
   Object.defineProperty(HTMLElement.prototype, 'getAnimations', { configurable: true, value: () => [{ finished: new Promise(() => {}) }] });
   const view = render(App);
   await waitFor(() => expect(mocks.listeners.has('update_available')).toBe(true));
-  mocks.listeners.get('wheel_shown')!({ payload: { generation: 1, focus: true } });
+  mocks.listeners.get('wheel_shown')!({ payload: { generation: 1, focus: false } });
+  mocks.listeners.get('shift_drag_start')!({ payload: undefined });
+  await mocks.dragDrop!({ payload: { type: 'enter', paths: ['C:\\input\\photo.jpg'], position: { x: 316, y: 208 } } });
   await tick();
   await fireEvent.keyDown(window, { key: 'Escape' });
   await tick();

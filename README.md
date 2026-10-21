@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="frontend/vertex.png" width="100" height="100" alt="Vertex">
+  <img src="frontend/public/vertex.png" width="100" height="100" alt="Vertex">
 </p>
 
 <h2 align="center">Vertex</h2>
@@ -68,7 +68,7 @@ To launch Vertex automatically when you sign in to Windows, open **Advanced sett
 | Video | MP4, MOV, MKV, AVI, WEBM, WMV, FLV, 3GP, TS | Includes MP4 to MP4 compression to reduce file size |
 | Audio | MP3, WAV, FLAC, AAC, M4A, OGG, OPUS, AIFF, WMA | Convert audio files or extract audio from video |
 | Image | PNG, JPEG, WEBP, BMP, ICO, TIFF, GIF, AVIF, SVG, HEIC/HEIF | SVG rendering is built in; AVIF input uses FFmpeg or ImageMagick, HEIC input requires ImageMagick with libheif |
-| Document | PDF, DOC, DOCX, ODT, RTF, TXT, Markdown, HTML | Editable PDF → DOCX uses pdf2docx; Office conversions use LibreOffice; Markdown/TXT to HTML is built in; PDF to image/text uses Poppler |
+| Document | PDF, DOC/DOCX/DOCM, DOT/DOTX/DOTM, ODT/OTT/FODT, SXW, WPS, WPD, WRI, RTF, TXT, Markdown, HTML/XHTML | Editable PDF → DOCX uses pdf2docx; Office conversions use LibreOffice; Markdown/TXT to HTML is built in; PDF to image/text uses Poppler |
 | Spreadsheet | XLSX, XLS, ODS, CSV, TSV | LibreOffice for workbook formats; CSV/TSV conversions are built in |
 | Data | JSON, YAML, TOML, XML, CSV, TSV | Native Rust converters; CSV/TSV require flat table data |
 | Presentation | PPTX, PPT, ODP | LibreOffice for conversion and PDF export |
@@ -77,6 +77,8 @@ To launch Vertex automatically when you sign in to Windows, open **Advanced sett
 The wheel reports missing conversion tools. PDF image export renders the first page at the configured DPI; CSV/TSV workbook export uses the first sheet. HEIC and SVG are input formats. See [conversion behavior and dependencies](docs/conversion-contract.md) for exact routes and constraints.
 
 PDF → Word reconstructs editable text and tables while retaining supported formatting and images. Complex layouts and missing fonts can change the result; scanned pages need OCR first. TXT cannot retain rich formatting. UTF-8 and UTF-16 text with a BOM are supported without silently replacing invalid characters.
+
+Office documents and templates can export to PDF, DOC, DOCX, DOTX, ODT, OTT, FODT, RTF, HTML and TXT. DOCM, DOT, DOTM, SXW, WPS (Microsoft Works), WPD (WordPerfect) and WRI (Microsoft Write) are input formats. Macros are disabled; preserving macros is not supported. Text aliases include NFO/ASC, Markdown aliases include MDOWN/MKD/MDWN, and XHTML/XHT use the HTML converter.
 
 <div id="installation"></div>
 

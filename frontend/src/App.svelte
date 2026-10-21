@@ -390,7 +390,6 @@
           dragRevision++;
           dragCancelled = false;
           cancelClose();
-          if (event.payload.focus && !settingsVisible) void showWheel();
         });
         await listen('wheel_close_requested', () => {
           if (settingsVisible) {

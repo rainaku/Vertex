@@ -118,11 +118,6 @@ export async function forceHideWheelWindow(): Promise<void> {
   return invoke('force_hide_wheel_window');
 }
 
-export async function showWheelWindow(): Promise<void> {
-  if (!isTauri) return;
-  return invoke('show_wheel_window');
-}
-
 /**
  * Ensure native input capture before interacting with the wheel.
  * Legacy passthrough=true requests are ignored; hidden native windows already

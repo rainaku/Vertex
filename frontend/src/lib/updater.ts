@@ -24,7 +24,7 @@ export interface UpdateInfo {
 }
 
 const GITHUB_REPO = 'rainaku/Vertex';
-const APP_VERSION = '1.2.0';
+const APP_VERSION = '1.2.1';
 
 export const updateStore = writable<UpdateInfo>({
   status: 'idle',

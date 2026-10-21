@@ -20,7 +20,7 @@ Rust tests compare the entire snapshot with the live registry. Frontend tests ex
 | SVG | Same raster outputs | resvg; DPI applies to physical units such as inches |
 | PDF | Same raster outputs; TXT | Poppler `pdftoppm` / `pdftotext` |
 | PDF | DOCX with editable paragraphs and tables | Local `pdf2docx` CLI |
-| DOC, DOCX, ODT, RTF, TXT, HTML, Markdown | DOC, DOCX, ODT, RTF, TXT, HTML, PDF (excluding identical office formats) | LibreOffice; Markdown first becomes UTF-8 HTML |
+| DOC, DOCX, DOCM, DOT, DOTX, DOTM, ODT, OTT, FODT, SXW, WPS, WPD, WRI, RTF, TXT, HTML/XHTML, Markdown | DOC, DOCX, DOTX, ODT, OTT, FODT, RTF, TXT, HTML, PDF (excluding identical office formats) | LibreOffice; Markdown first becomes UTF-8 HTML |
 | Markdown | HTML, TXT | Rust Markdown parser |
 | TXT | HTML | Rust escaping and UTF-8 HTML |
 | XLSX, XLS, ODS, CSV, TSV | Other formats in this group, PDF | LibreOffice; native Rust handles CSV/TSV pairs |
@@ -37,6 +37,8 @@ HEIC and SVG are input-only. PDF supports rendering, text extraction and editabl
 - `dpi` is used by PDF rasterization and by SVG physical-unit conversion. PDF exports the first page; PDF-to-TXT extracts the text layer from all pages and does not perform OCR.
 - PDF-to-DOCX reconstructs paragraphs, tables and images from all pages using pdf2docx. It does not rasterize pages or use image DPI/resize/quality controls. Fonts and complex layouts may differ; install the original fonts for closer results. Images (including scanned text) remain images; there is no OCR. Image-only/empty Word output is rejected with an OCR message. In mixed PDFs, scanned pages remain non-editable images. Page errors abort the whole conversion, rather than silently dropping failed pages. Jobs have a five-minute timeout and publish only after checking the DOCX text layer.
 - DOC/DOCX/ODT/RTF conversions preserve the features supported by both formats; exact layout equality is not guaranteed. TXT exports discard fonts, colors, images and table formatting. These limitations are shown in the wheel before conversion.
+- DOTX and OTT exports create reusable document templates; FODT is flat XML OpenDocument text. DOCM, DOT, DOTM, SXW, WPS (Microsoft Works), WPD (WordPerfect) and WRI (Microsoft Write) are input-only. Macro-enabled Word inputs export document content with macro execution disabled; preserving macros is not supported. Legacy format features depend on the installed LibreOffice import filters. The original file is retained.
+- Word ZIP packages are classified by their main-part content type, distinguishing DOCX/DOCM/DOTX/DOTM even after renaming. OTT and SXW use the package MIME type. Flat ODF XML is recognized as FODT rather than structured-data XML. NFO/ASC are plain-text aliases, MDOWN/MKD/MDWN are Markdown aliases, and XHTML/XHT use HTML handling; NFO/ASC still require supported Unicode encoding.
 - TXT/Markdown input accepts strict UTF-8 (with or without a BOM) and UTF-16LE/BE with a BOM. It retains Unicode, tabs and blank lines. Invalid/ambiguous encodings, including legacy ANSI and BOM-less UTF-16 containing NULs, fail with an encoding message instead of replacing characters. Save such files as UTF-8 first. Text input is limited to 64 MiB.
 - Maximum dimensions apply to raster images, PDF/SVG renders and video. ICO has its own 256-pixel format limit. Raster conversions use the first image/frame for animated or multipage image inputs.
 - JPEG background fill replaces transparency. GIF alpha threshold applies to still-image GIF output and to FFmpeg GIF palette conversion.

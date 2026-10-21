@@ -51,12 +51,6 @@ pub struct AppState {
     pub active_cancels: Arc<Mutex<std::collections::HashMap<String, CancelToken>>>,
 }
 
-pub struct LanguageMenu {
-    pub toggle: tauri::menu::MenuItem<tauri::Wry>,
-    pub settings: tauri::menu::MenuItem<tauri::Wry>,
-    pub quit: tauri::menu::MenuItem<tauri::Wry>,
-}
-
 static APP_LANGUAGE: Mutex<&'static str> = Mutex::new("vi");
 
 pub fn current_language() -> &'static str {
@@ -64,30 +58,12 @@ pub fn current_language() -> &'static str {
 }
 
 #[tauri::command]
-pub fn set_app_language(
-    language: String,
-    menu: tauri::State<'_, LanguageMenu>,
-) -> Result<(), String> {
-    let (lang, toggle, settings, quit) = match language.as_str() {
-        "vi" => (
-            "vi",
-            "Hiện / ẩn Vertex",
-            "Cài đặt nâng cao…",
-            "Thoát Vertex",
-        ),
-        "en" => (
-            "en",
-            "Show / hide Vertex",
-            "Advanced settings…",
-            "Quit Vertex",
-        ),
+pub fn set_app_language(language: String) -> Result<(), String> {
+    let lang = match language.as_str() {
+        "vi" => "vi",
+        "en" => "en",
         _ => return Err("Unsupported language".into()),
     };
-    menu.toggle.set_text(toggle).map_err(|e| e.to_string())?;
-    menu.settings
-        .set_text(settings)
-        .map_err(|e| e.to_string())?;
-    menu.quit.set_text(quit).map_err(|e| e.to_string())?;
     *APP_LANGUAGE.lock().unwrap_or_else(|p| p.into_inner()) = lang;
     Ok(())
 }
@@ -438,17 +414,6 @@ pub async fn force_hide_wheel_window(app: AppHandle) -> Result<(), String> {
 #[tauri::command]
 pub fn set_converting_state(converting: bool) {
     crate::drag_detector::set_is_converting(converting);
-}
-
-#[tauri::command]
-pub async fn show_wheel_window(app: AppHandle) -> Result<(), String> {
-    on_main_window(app, |win| {
-        if crate::drag_detector::settings_open() {
-            return Ok(());
-        }
-        crate::wheel_window::show(&win, None, true)
-    })
-    .await
 }
 
 /// Compatibility endpoint for frontend capture requests. Visible windows always
